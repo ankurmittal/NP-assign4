@@ -1,0 +1,8 @@
+*.o
+*_tour
+*_arp
+ODR_*
+.*swp
+.*swo
+var.sh
+var.mk

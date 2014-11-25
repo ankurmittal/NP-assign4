@@ -1,4 +1,4 @@
-#include "common.h"
+#include "lib.h"
 
 int main(int argc, char *argv[])
 {
@@ -15,7 +15,8 @@ int main(int argc, char *argv[])
 	
 	for (i=0; i<vmCount; i++) {
 		if((ent = gethostbyname(argv[i+1])) == NULL) {
-			perror("gethostbyname error for %s\n", argv[i+1]);
+			perror("Cannot find hostname");
+			printf("for %s", argv[i+1]);
 			exit(1);
 		}
 		inet_ntop(PF_INET, ent->h_addr_list[0], vmIPList[i], 16);
@@ -24,8 +25,8 @@ int main(int argc, char *argv[])
 
 	sockfd_rt = Socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
 	sockfd_pg = Socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-	sockfd_pf = Socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-	sockfd_udp = Socket(PF_PACKET, SOCK_DGRAM, htons(ETH_P_ALL));
+	sockfd_pf = Socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL)); //Use own proto
+	sockfd_udp = Socket(PF_PACKET, SOCK_DGRAM, htons(ETH_P_ALL)); // Use own proto
 	
 	setsockopt(sockfd_rt, IPPROTO_IP, IP_HDRINCL, &flag1, siceof(flag1));
 	setsockopt(sockfd_pg, IPPROTO_IP, IP_HDRINCL, &flag2, sizeof(flag2));

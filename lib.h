@@ -1,5 +1,5 @@
-#ifndef _COMMON_H
-#define _COMMON_H
+#ifndef _LIB_H
+#define _LIB_H
 
 #include "unp.h"
 #include <stdarg.h>
@@ -14,3 +14,5 @@ static void printdebuginfo(const char *format, ...)
     vprintf(format, args);
     va_end(args);
 }
+
+#endif
