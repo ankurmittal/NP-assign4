@@ -1,1 +1,107 @@
-#include "common.h"
+#include "lib.h"
+
+int sendframe(int framefd, char *destmac, int interface, char *srcmac, int hdr_len, void *data, int data_length, short proto)
+{    
+	struct sockaddr_ll socket_address;
+	int n;
+	/*buffer for ethernet frame*/
+	void* buffer;
+	char src_name[10], dest_name[10];
+
+	/*userdata in ethernet frame*/
+	void* data_p;
+
+	/*another pointer to ethernet header*/
+	struct ethhdr *eh;
+
+	int len = sizeof(struct ethhdr) + data_length;
+
+	int send_result = 0;
+
+	buffer = zalloc(len);
+	eh = buffer;
+
+	data_p = buffer + sizeof(struct ethhdr);
+
+	/*prepare sockaddr_ll*/
+
+	/*RAW communication*/
+	socket_address.sll_family   = PF_PACKET;   
+	socket_address.sll_protocol = htons(0);   
+
+	/*index of the network device*/
+	socket_address.sll_ifindex  = interface;
+
+	/*ARP hardware identifier is ethernet*/
+	socket_address.sll_hatype   = ARPHRD_ETHER;
+
+	/*target is another host*/
+	socket_address.sll_pkttype  = PACKET_OTHERHOST;
+
+	/*address length*/
+	socket_address.sll_halen    = ETH_ALEN;	
+	/*MAC - begin*/
+	socket_address.sll_addr[0]  = destmac[0];	    
+	socket_address.sll_addr[1]  = destmac[1];	    
+	socket_address.sll_addr[2]  = destmac[2];	    
+	socket_address.sll_addr[3]  = destmac[3];	    
+	socket_address.sll_addr[4]  = destmac[4];	    
+	socket_address.sll_addr[5]  = destmac[5];	    
+	socket_address.sll_addr[6]  = destmac[6];	    
+	/*MAC - end*/
+	socket_address.sll_addr[6]  = 0x00;/*not used*/
+	socket_address.sll_addr[7]  = 0x00;/*not used*/
+
+	/*set the frame header*/
+	memcpy((void*)buffer, (void*)destmac, ETH_ALEN);
+	memcpy((void*)(buffer+ETH_ALEN), (void*)srcmac, ETH_ALEN);
+	eh->h_proto = htons(proto);
+	memcpy(data_p, data, data_length);
+	/*fill the frame with some data*/
+
+	/*send the packet*/
+	n = sendto(framefd, buffer, len, 0, 
+			(struct sockaddr*)&socket_address, sizeof(socket_address));
+	printdebuginfo(" Frame length sent:%d, hdr_len:%d\n", n, hdr_len);
+	if (n < 0) 
+	{ 
+		perror("Error while sending packet.");
+	}
+	free(buffer);
+	return n;
+}
+
+void recieveframe(int framefd, struct recv_frame *recv_frame)
+{
+	struct sockaddr_ll socket_address;
+	socklen_t addrlen = sizeof(socket_address);
+	char *ptr;
+	char *my_mac;
+	unsigned char src_mac[IF_HADDR];
+	void* buffer = (void*)zalloc(ETH_FRAME_LEN); /*Buffer for ethernet frame*/
+	int length = 0, n; /*length of the received frame*/ 
+	int datalength = 0;
+
+	memset(&socket_address, 0, addrlen);
+	length = recvfrom(framefd, buffer, ETH_FRAME_LEN, 0, (SA *)&socket_address, &addrlen);
+	if (length < 0) { perror("Error while recieving packet"); return;}
+	
+	datalength = length - sizeof(struct ethhdr);
+
+	recv_frame->data = zalloc(datalength);	
+	memcpy(recv_frame->data, buffer+sizeof(struct ethhdr), datalength);
+	printdebuginfo("\n message recieved, len:%d, at interface %d with mac address: ", length, socket_address.sll_ifindex);
+
+	ptr = buffer + ETH_ALEN;
+	length = IF_HADDR;
+	memcpy(recv_frame->src_mac, ptr, IF_HADDR);
+	
+	recv_frame->interfaceNo = socket_address.sll_ifindex;
+	
+	do {
+		printdebuginfo(" %.2x%s", *(recv_frame->src_mac - length + IF_HADDR), (length == 1) ? " " : ":");
+	} while (--length > 0);
+
+exit:
+	free(buffer);
+}
