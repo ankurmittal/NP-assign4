@@ -10,7 +10,18 @@
 #include "hw_addrs.h"
 #include <assert.h>
 
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
 #define ARP_PROTO PROTO+1
+#define ARP_PATH "/tmp/arp_" STR(PROTO)
+
+struct interface_info 
+{
+    char if_haddr[IF_HADDR];
+    unsigned long ip;
+    int interfaceno;
+    struct interface_info *next;
+};
 
 static void printdebuginfo(const char *format, ...)
 {
@@ -32,7 +43,7 @@ struct arp_header {
 	uint16_t proto_type;
 	uint8_t hard_size;
 	uint8_t prot_size;
-	uint16_t op;
+	uint16_t op;	// 0 for request, 1 for response
 	unsigned char senderEthAddr[6];
 	uint32_t senderIPAddr;
 	unsigned char targetEthAddr[6];

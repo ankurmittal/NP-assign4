@@ -26,8 +26,8 @@ arp.o : arp.c lib.h
 ${LOGIN}_tour : tour.o lib.o
 	${CC} -g -o $@ tour.o lib.o ${LIBS}
 
-${LOGIN}_arp : arp.o lib.o
-	${CC} -g -o $@ arp.o lib.o ${LIBS}
+${LOGIN}_arp : arp.o lib.o get_hw_addrs.o
+	${CC} -g -o $@ arp.o lib.o get_hw_addrs.o ${LIBS}
 
 
 lib.o : lib.c lib.h
