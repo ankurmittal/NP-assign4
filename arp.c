@@ -224,12 +224,13 @@ int main(int argc, char *argv[])
         if(FD_ISSET(localfd, &allset)) {
             struct arp_header arphdr;
             struct Entry *cacheEntry;
+	    int connfd;
 
             clilen = sizeof(cliaddr);
             memset(&cliaddr, 0, sizeof(cliaddr));
+	    connfd = Accept (localfd, (SA *) &cliaddr, &clilen)
 
-            n = recvfrom(localfd, &areq, sizeof(struct areqStruct), 0, (SA*)&cliaddr, &clilen);
-            printdebuginfo(" Cli sun_name:%s\n", cliaddr.sun_path);
+            n = read(connfd, &areq, sizeof(struct areqStruct));
             
             cacheEntry = ll_find(cacheHead, areq.targetIP);
 
@@ -249,7 +250,7 @@ int main(int argc, char *argv[])
             cacheEntry->ip = areq.targetIP;
             cacheEntry->interface = eth0ino;
             cacheEntry->sll_hatype = htons(areq.hard_type);
-            memcpy(cacheEntry->sunpath, cliaddr.sun_path, 108);
+	    cacheEntry->fd = connfd;
 
             cacheHead = ll_insert(cacheHead, cacheEntry);
 
