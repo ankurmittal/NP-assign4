@@ -29,7 +29,7 @@ ${LOGIN}_tour : tour.o lib.o get_hw_addrs.o
 ${LOGIN}_arp : arp.o lib.o get_hw_addrs.o
 	${CC} -g -o $@ arp.o lib.o get_hw_addrs.o ${LIBS}
 
-o : lib.c lib.h
+lib.o : lib.c lib.h
 	${CC} ${FLAGS} -DPROTO=${ID} -c lib.c
 
 clean:
