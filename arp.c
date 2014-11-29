@@ -61,7 +61,12 @@ void sendToTour(int fd, unsigned char *mac, int interface) {
     void *areqRes = zalloc(6*sizeof(uint8_t) + sizeof(int));            
     memcpy(areqRes, mac, 6*sizeof(uint8_t));
     memcpy(areqRes + 6*sizeof(uint8_t), &interface, sizeof(int));
-    n = write(localfd, areqRes, (6*sizeof(uint8_t) + sizeof(int)));
+    
+    printdebuginfo("sending to tour\n");
+
+    n = write(fd, areqRes, (6*sizeof(uint8_t) + sizeof(int)));
+    
+    
     free(areqRes);
     if(n < 0) {
         printdebuginfo("Error writing back to tour\n");
