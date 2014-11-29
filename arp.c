@@ -154,9 +154,7 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
             sendframe(framefd, dest_mac, recv_frame->interfaceNo, temp->if_haddr, recv_frame->data, sizeof(struct arp_header), PROTO);
 
         } else {
-
             // this is intermediate node
-
             ll_update(cacheHead, header->senderIPAddr, header->senderEthAddr);
 
             while(temp != NULL) {
@@ -169,7 +167,6 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
         }
 
     } else if(header->op == 1) {
-
             ll_update(cacheHead, header->senderIPAddr, header->senderEthAddr); 
     }
 }
@@ -178,6 +175,7 @@ int main(int argc, char *argv[])
 {
     struct sockaddr_un servaddr, cliaddr;
     socklen_t clilen;
+    struct areqStruct areq;
     fd_set allset;
     int n, tinterfaces = 0, localfd, framefd;
     struct recv_frame *recv_frame;
@@ -190,8 +188,6 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    // Unix Domain Socket
-
     printdebuginfo("creating localfd\n");
 
     localfd = Socket(AF_LOCAL, SOCK_STREAM, 0);
@@ -203,11 +199,15 @@ int main(int argc, char *argv[])
     printdebuginfo("Binding.. sunpath: %s\n", servaddr.sun_path);
 
     Bind(localfd, (SA *) &servaddr, sizeof(servaddr));
+    Listen(localfd, 100);
+    
     tinterfaces = build_interface_info();
 
     printdebuginfo("total interfaces = %d, creating framefd\n", tinterfaces);
     
     framefd = Socket(AF_PACKET, SOCK_RAW, htons(PROTO));
+
+    printdebuginfo("before loop:\n localfd: %d, framefd: %d\n", localfd, framefd);
 
     while(1)
     {
@@ -221,6 +221,7 @@ int main(int argc, char *argv[])
             goto exit;
         }
         if(FD_ISSET(framefd, &allset)) {
+            printdebuginfo("1\n");
             recv_frame = zalloc(sizeof(struct recv_frame));
             recieveframe(framefd, recv_frame);
             processFrame(recv_frame, framefd);
@@ -228,11 +229,12 @@ int main(int argc, char *argv[])
             free(recv_frame);
         }
         if(FD_ISSET(localfd, &allset)) {
+            printdebuginfo("2\n");
             clilen = sizeof(cliaddr);
             memset(&cliaddr, 0, sizeof(cliaddr));
-//            n = recvfrom(localfd, &msg_content, sizeof(msg_content), 0, (SA*)&cliaddr, &clilen);
-//            printdebuginfo(" Message from client/server %d, %d, %s, %s\n", msg_content.port, msg_content.flag, msg_content.msg, msg_content.ip);
-//            printdebuginfo(" Cli sun_name:%s\n", cliaddr.sun_path);
+            
+            n = recvfrom(localfd, &areq, sizeof(struct areqStruct), 0, (SA*)&cliaddr, &clilen);
+            printdebuginfo(" Cli sun_name:%s\n", cliaddr.sun_path);
         }
     }
 exit:

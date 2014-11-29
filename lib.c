@@ -1,5 +1,64 @@
 #include "lib.h"
 
+/*
+ * returns number of bytes read when successful, else returns -1
+ */
+int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) {
+    int sockfd, tfd;
+    struct sockaddr_un arpaddr;   
+    struct areqStruct reqMsg;
+    struct sockaddr_in *sin = (struct sockaddr_in *) IPaddr;    
+    static struct timeval selectTime;
+    int n = 0;
+    fd_set allset;
+    
+    unsigned char *buffer = zalloc(10);
+    bzero(buffer, 6);
+
+    sockfd = Socket(AF_LOCAL, SOCK_STREAM, 0);
+    bzero(&arpaddr, sizeof(arpaddr));
+    arpaddr.sun_family = AF_LOCAL;
+    strcpy(arpaddr.sun_path, ARP_PATH);
+    tfd = mkstemp(arpaddr.sun_path);
+    unlink(arpaddr.sun_path);
+    Bind(sockfd, (SA *) &arpaddr, sizeof(arpaddr));
+
+    reqMsg.targetIP = sin->sin_addr.s_addr;
+    reqMsg.interface = HWaddr->sll_ifindex;
+    reqMsg.hard_type = HWaddr->sll_hatype;
+    reqMsg.addr_len = HWaddr->sll_halen;
+
+    n = sendto(sockfd, &reqMsg, sizeof(struct areqStruct), 0, (SA *) &arpaddr, sizeof(arpaddr));
+    
+    if(n < 0) {
+        perror("Error writing to odr socket\n");
+    }
+
+    selectTime.tv_sec = 3;
+    selectTime.tv_usec = 0;
+    
+    FD_ZERO(&allset);
+    FD_SET(sockfd, &allset);
+    
+    select(sockfd+1, &allset, NULL, NULL, &selectTime);
+    
+    if(FD_ISSET(sockfd, &allset)) {
+        n = read(sockfd,buffer,10);
+        if (n < 0) {
+            perror("ERROR reading from socket");
+            return n;
+        }
+    } else {
+        printdebuginfo("Timeout occured in receive message..!!\n");
+        close(sockfd);
+        return -1;
+    }
+    
+    memcpy(HWaddr->sll_addr, buffer, 6);
+    free(buffer);
+    return n;
+}
+
 int sendframe(int framefd, char *destmac, int interface, char *srcmac, int hdr_len, void *data, int data_length, short proto)
 {    
 	struct sockaddr_ll socket_address;
