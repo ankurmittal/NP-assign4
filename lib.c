@@ -5,7 +5,7 @@
  */
 int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) {
     int sockfd, tfd;
-    struct sockaddr_un arpaddr;   
+    struct sockaddr_un arpaddr, cliaddr;   
     struct areqStruct reqMsg;
     struct sockaddr_in *sin = (struct sockaddr_in *) IPaddr;    
     static struct timeval selectTime;
@@ -13,22 +13,24 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) 
     fd_set allset;
     
     unsigned char *buffer = zalloc(20);
-    bzero(buffer, 6);
 
     sockfd = Socket(AF_LOCAL, SOCK_STREAM, 0);
     bzero(&arpaddr, sizeof(arpaddr));
+    bzero(&cliaddr, sizeof(arpaddr));
     arpaddr.sun_family = AF_LOCAL;
+    cliaddr.sun_family = AF_LOCAL;
     strcpy(arpaddr.sun_path, ARP_PATH);
-    tfd = mkstemp(arpaddr.sun_path);
-    unlink(arpaddr.sun_path);
-    Bind(sockfd, (SA *) &arpaddr, sizeof(arpaddr));
+    tfd = mkstemp(cliaddr.sun_path);
+    unlink(cliaddr.sun_path);
+    //Bind(sockfd, (SA *) &cliaddr, sizeof(arpaddr));
+    Connect (sockfd, (SA*)&arpaddr, sizeof (arpaddr));
 
     reqMsg.targetIP = sin->sin_addr.s_addr;
     reqMsg.interface = HWaddr->sll_ifindex;
     reqMsg.hard_type = HWaddr->sll_hatype;
     reqMsg.addr_len = HWaddr->sll_halen;
 
-    n = sendto(sockfd, &reqMsg, sizeof(struct areqStruct), 0, (SA *) &arpaddr, sizeof(arpaddr));
+    n = write(sockfd, &reqMsg, sizeof(struct areqStruct));
     
     if(n < 0) {
         perror("Error writing to arp socket\n");
@@ -51,7 +53,8 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) 
         }
     } else {
         printdebuginfo("Timeout occured in receive message..!!\n");
-        n = ETIME;
+        n = -ETIME;
+	errno = -ETIME;
         goto exit;
     }
     

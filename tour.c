@@ -26,16 +26,93 @@ struct tour_hdr
     char port[6];
 };
 
+// Checksum function
+    uint16_t
+checksum (uint16_t *addr, int len)
+{
+    int nleft = len;
+    int sum = 0;
+    uint16_t *w = addr;
+    uint16_t answer = 0;
+
+    while (nleft > 1) {
+	sum += *w++;
+	nleft -= sizeof (uint16_t);
+    }
+
+    if (nleft == 1) {
+	*(uint8_t *) (&answer) = *(uint8_t *) w;
+	sum += answer;
+    }
+
+    sum = (sum >> 16) + (sum & 0xFFFF);
+    sum += (sum >> 16);
+    answer = ~sum;
+    return (answer);
+}
+// Build IPv4 ICMP pseudo-header and call checksum function.
+    uint16_t
+icmp4_checksum (struct icmp icmphdr, uint8_t *payload, int payloadlen)
+{
+    char buf[IP_MAXPACKET];
+    char *ptr;
+    int chksumlen = 0;
+    int i;
+
+    ptr = &buf[0];  // ptr points to beginning of buffer buf
+
+    // Copy Message Type to buf (8 bits)
+    memcpy (ptr, &icmphdr.icmp_type, sizeof (icmphdr.icmp_type));
+    ptr += sizeof (icmphdr.icmp_type);
+    chksumlen += sizeof (icmphdr.icmp_type);
+
+    // Copy Message Code to buf (8 bits)
+    memcpy (ptr, &icmphdr.icmp_code, sizeof (icmphdr.icmp_code));
+    ptr += sizeof (icmphdr.icmp_code);
+    chksumlen += sizeof (icmphdr.icmp_code);
+
+    // Copy ICMP checksum to buf (16 bits)
+    // Zero, since we don't know it yet
+    *ptr = 0; ptr++;
+    *ptr = 0; ptr++;
+    chksumlen += 2;
+
+    // Copy Identifier to buf (16 bits)
+    memcpy (ptr, &icmphdr.icmp_id, sizeof (icmphdr.icmp_id));
+    ptr += sizeof (icmphdr.icmp_id);
+    chksumlen += sizeof (icmphdr.icmp_id);
+
+    // Copy Sequence Number to buf (16 bits)
+    memcpy (ptr, &icmphdr.icmp_seq, sizeof (icmphdr.icmp_seq));
+    ptr += sizeof (icmphdr.icmp_seq);
+    chksumlen += sizeof (icmphdr.icmp_seq);
+
+    // Copy payload to buf
+    memcpy (ptr, payload, payloadlen);
+    ptr += payloadlen;
+    chksumlen += payloadlen;
+
+    // Pad to the next 16-bit boundary
+    for (i=0; i<payloadlen%2; i++, ptr++) {
+	*ptr = 0;
+	ptr++;
+	chksumlen++;
+    }
+
+    return checksum ((uint16_t *) buf, chksumlen);
+}
+
+
 int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
 	unsigned long destip)
 {
 
-    int datalen = 5, n;
+    int datalen = 56, n;
     int buf_len = IP4_HDRLEN + ICMP_HDRLEN + datalen;
     void *buffer = zalloc(buf_len);
     struct ip iphdr;
     struct icmp icmphdr;
-    char data[5] = "PING";
+    char data[56] = "PING";
     // IPv4 header length (4 bits): Number of 32-bit words in header = 5
     iphdr.ip_hl = IP4_HDRLEN / sizeof (uint32_t);
 
@@ -49,7 +126,7 @@ int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
     iphdr.ip_len = htons (buf_len);
 
     // ID sequence number (16 bits): unused, since single datagram
-    iphdr.ip_id = htons (0);
+    iphdr.ip_id = htons(0);
 
     // Flags, and Fragmentation offset (3, 13 bits): 0 since single datagram
 
@@ -61,6 +138,8 @@ int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
     // Transport layer protocol (8 bits): 1 for ICMP
     iphdr.ip_p = IPPROTO_ICMP;
     iphdr.ip_src.s_addr = myip;
+
+    printdebuginfo("My ip: %lu\n", myip);
     iphdr.ip_dst.s_addr = destip;
     iphdr.ip_sum = 0;
     icmphdr.icmp_type = ICMP_ECHO;
@@ -69,13 +148,13 @@ int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
     icmphdr.icmp_code = 0;
 
     // Identifier (16 bits): usually pid of sending process - pick a number
-    icmphdr.icmp_id = htons (1000);
+    icmphdr.icmp_id = htons (getpid());
 
     // Sequence Number (16 bits): starts at 0
-    icmphdr.icmp_seq = htons (0);
+    icmphdr.icmp_seq = htons (1);
 
     // ICMP header checksum (16 bits): set to 0 when calculating checksum
-    icmphdr.icmp_cksum = 0;
+    icmphdr.icmp_cksum = icmp4_checksum (icmphdr, data, datalen);
 
     memcpy(buffer, &iphdr, IP4_HDRLEN);
     memcpy(buffer + IP4_HDRLEN, &icmphdr, ICMP_HDRLEN);
@@ -243,10 +322,10 @@ int main(int argc, char *argv[])
     unsigned long *vm_list = NULL;
     struct hostent *ent;
     int i=0, sockfd_rt, sockfd_pg, maxsockfd;
-    unsigned long myip;
     struct in_addr ** addr_list;
     fd_set allset;
     int n;
+    getmacinfo();
 
     gethostname(hostname, 5);
     printdebuginfo("my host name: %s\n", hostname);
@@ -310,7 +389,7 @@ int main(int argc, char *argv[])
     {
 	FD_ZERO(&allset);
 	FD_SET(sockfd_rt, &allset);
-	FD_SET(sockfd_pf, &allset);
+	//FD_SET(sockfd_pf, &allset);
 	FD_SET(sockfd_pg, &allset);
 	if(msendfd != -1)
 	{
@@ -371,7 +450,7 @@ int main(int argc, char *argv[])
 		    break;
 	    }
 	    printf("Exiting Tour\n");
-	    goto exit;
+	    //goto exit;
 	}
     }
 
