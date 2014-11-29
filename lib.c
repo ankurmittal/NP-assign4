@@ -59,7 +59,7 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) 
     return n;
 }
 
-int sendframe(int framefd, char *destmac, int interface, char *srcmac, int hdr_len, void *data, int data_length, short proto)
+int sendframe(int framefd, char *destmac, int interface, char *srcmac, void *data, int data_length, short proto)
 {    
 	struct sockaddr_ll socket_address;
 	int n;
@@ -119,9 +119,17 @@ int sendframe(int framefd, char *destmac, int interface, char *srcmac, int hdr_l
 	/*fill the frame with some data*/
 
 	/*send the packet*/
+	printdebuginfo("sending message at: %d to: ", interface);
+	n = 6;
+	while(n-- > 0)
+	    printdebuginfo("%.2x::", *(destmac + 5 - n) & 0xff);
+	printdebuginfo(" from mac: ", interface);
+	n = 6;
+	while(n-- > 0)
+	    printdebuginfo("%.2x::", *(srcmac + 5 - n) & 0xff);
+	printdebuginfo("\n");
 	n = sendto(framefd, buffer, len, 0, 
 			(struct sockaddr*)&socket_address, sizeof(socket_address));
-	printdebuginfo(" Frame length sent:%d, hdr_len:%d\n", n, hdr_len);
 	if (n < 0) 
 	{ 
 		perror("Error while sending packet.");
@@ -160,6 +168,7 @@ void recieveframe(int framefd, struct recv_frame *recv_frame)
 	do {
 		printdebuginfo(" %.2x%s", *(recv_frame->src_mac - length + IF_HADDR), (length == 1) ? " " : ":");
 	} while (--length > 0);
+	printdebuginfo("\n");
 
 exit:
 	free(buffer);

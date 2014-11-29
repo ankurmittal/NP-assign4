@@ -64,11 +64,15 @@ struct arp_header {
     uint32_t targetIPAddr;
 };
 
+
 struct recv_frame {
     int interfaceNo;
     unsigned char src_mac[6];
     void *data;
 };
+int sendframe(int framefd, char *destmac, int interface, char *srcmac, void *data, int data_length, short proto);
+int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr);
+void recieveframe(int framefd, struct recv_frame *recv_frame);
 
 static void *zalloc(size_t size)
 {

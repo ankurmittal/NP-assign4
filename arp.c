@@ -2,10 +2,10 @@
 
 static char hostname[5];
 static uint32_t cononicalip;
-static struct interface_info *tempinterface, *hinterface = NULL;
 static struct ll_Node *cacheHead = NULL;
 static unsigned char b_mac[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-static int localfd;
+static int localfd, eth0ino;
+static unsigned char eth0macaddr[IF_HADDR];
 
 struct Entry
 {
@@ -77,48 +77,24 @@ void ll_update(struct ll_Node *ll_ptr, uint32_t ip, char *mac) {
         ll_pointer = ll_pointer->next;
     }
 }
-
-void free_interface_info() {
-    while(hinterface != NULL) {
-        tempinterface = hinterface;
-        hinterface = hinterface->next;
-        free(tempinterface);
-    }
-}
-
-int build_interface_info() 
+void getmacinfo() 
 {
     struct hwa_info *hwa, *hwahead;
-    int tinterfaces = 0;
     for (hwahead = hwa = Get_hw_addrs(); hwa != NULL; hwa = hwa->hwa_next) {
         struct sockaddr_in  *sin = (struct sockaddr_in *) (hwa->ip_addr);
         if(strcmp(hwa->if_name, "lo") == 0)
             continue;
         if(strcmp(hwa->if_name, "eth0") == 0) {
-            cononicalip = htonl(sin->sin_addr.s_addr);
-            printdebuginfo(" Cononical IP: %lu\n", ntohl(cononicalip));
+            cononicalip = sin->sin_addr.s_addr;
+            printdebuginfo(" Cononical IP: %lu\n", cononicalip);
+	    eth0ino = hwa->if_index;
+	    memcpy(eth0macaddr, hwa->if_haddr, IF_HADDR);
         } else {
-            struct interface_info *iinfo = (struct interface_info*)malloc(sizeof(struct interface_info));
-            int i;
-            memset(iinfo, 0, sizeof(struct interface_info));
-            tinterfaces++;
-            if(hinterface == NULL)
-                hinterface = iinfo;
-            else
-                tempinterface->next = iinfo;
-
-            iinfo->ip=sin->sin_addr.s_addr;
-            iinfo->interfaceno = hwa->if_index;
-            for(i = 0; i < IF_HADDR; i++)
-                iinfo->if_haddr[i] = hwa->if_haddr[i];
-            iinfo->next = NULL;
-
-            tempinterface = iinfo;
+	    continue;
         }
     }
 
     free_hwa_info(hwahead);
-    return tinterfaces;
 }
 
 void processFrame(struct recv_frame *recv_frame, int framefd)
@@ -130,44 +106,40 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
         printdebuginfo(" Discarding frame (ID mismatch)\n");
         return;
     }
-    if(header->op == 0) {
-        struct interface_info *temp = tempinterface;
+    if(header->op == 1) {
+	printf("%lu, %lu\n", header->targetIPAddr, cononicalip);
         if(header->targetIPAddr == cononicalip) {
 
             // this is destination node
+	    printdebuginfo("Reached dest\n");
 
-            while(temp != NULL) {
-                if(temp->interfaceno == recv_frame->interfaceNo)
-                    break;
-                temp = temp->next;
-            }
             memcpy(dest_mac, header->senderEthAddr, 6);
-            memcpy(header->targetEthAddr, temp->if_haddr, IF_HADDR);
-            memcpy(header->senderEthAddr, temp->if_haddr, IF_HADDR);
+            memcpy(header->targetEthAddr, eth0macaddr, IF_HADDR);
+            memcpy(header->senderEthAddr, eth0macaddr, IF_HADDR);
 
             senderIP = header->senderIPAddr;
             header->senderIPAddr = cononicalip;
-            header->op = 1;
+            header->op = 2;
 
             ll_update(cacheHead, senderIP, dest_mac);
 
-            sendframe(framefd, dest_mac, recv_frame->interfaceNo, temp->if_haddr, recv_frame->data, sizeof(struct arp_header), PROTO);
+            sendframe(framefd, dest_mac, eth0ino, eth0macaddr, recv_frame->data, sizeof(struct arp_header), PROTO);
 
         } else {
+	    if(header->senderIPAddr == cononicalip)
+		return;
             // this is intermediate node
             ll_update(cacheHead, header->senderIPAddr, header->senderEthAddr);
-
-            while(temp != NULL) {
-                if(temp->interfaceno != recv_frame->interfaceNo) {
-                    sendframe(framefd, b_mac, recv_frame->interfaceNo, temp->if_haddr, recv_frame->data, sizeof(struct arp_header), PROTO);
-                }
-                temp = temp->next;
-            }
             return;
         }
 
-    } else if(header->op == 1) {
-            ll_update(cacheHead, header->senderIPAddr, header->senderEthAddr); 
+    } else if(header->op == 2) {
+	    printdebuginfo("Recieved reply: ");
+	    int n = 6;
+	    while(n-->0)
+		printdebuginfo("%.2x::",*(header->targetEthAddr+ 5 - n) & 0xff);
+	    printdebuginfo("\n");
+            ll_update(cacheHead, header->senderIPAddr, header->targetEthAddr); 
     }
 }
 
@@ -177,7 +149,7 @@ int main(int argc, char *argv[])
     socklen_t clilen;
     struct areqStruct areq;
     fd_set allset;
-    int n, tinterfaces = 0, localfd, framefd;
+    int n, localfd, framefd;
     struct recv_frame *recv_frame;
     struct hostent *ent;
 
@@ -201,44 +173,58 @@ int main(int argc, char *argv[])
     Bind(localfd, (SA *) &servaddr, sizeof(servaddr));
     Listen(localfd, 100);
     
-    tinterfaces = build_interface_info();
+    getmacinfo();
 
-    printdebuginfo("total interfaces = %d, creating framefd\n", tinterfaces);
-    
     framefd = Socket(AF_PACKET, SOCK_RAW, htons(PROTO));
 
     printdebuginfo("before loop:\n localfd: %d, framefd: %d\n", localfd, framefd);
 
+    if(argc > 1)
+    {
+	struct arp_header arphdr;
+	bzero(&arphdr, sizeof(arphdr));
+	arphdr.id = PROTO + 2;
+	arphdr.hard_type = htons(1);
+	arphdr.proto_type = htons (PROTO);
+	arphdr.hard_size = 6;
+	arphdr.prot_size = 4;
+	arphdr.op = 1;
+	memset (&arphdr.targetEthAddr, 0, 6 * sizeof (uint8_t));
+	arphdr.targetIPAddr = 496825730;
+	arphdr.senderIPAddr = cononicalip;
+	memcpy(&arphdr.senderEthAddr, eth0macaddr, 6);
+	sendframe(framefd, b_mac, eth0ino,  eth0macaddr, &arphdr, sizeof(struct arp_header), PROTO);
+    }
+
     while(1)
     {
-        FD_ZERO(&allset);
-        FD_SET(localfd, &allset);
-        FD_SET(framefd, &allset);
-    
-        n = select(max(localfd, framefd) + 1, &allset, NULL, NULL, NULL);
-        if(n < 0) {
-            perror("Error during select, exiting.");
-            goto exit;
-        }
-        if(FD_ISSET(framefd, &allset)) {
-            printdebuginfo("1\n");
-            recv_frame = zalloc(sizeof(struct recv_frame));
-            recieveframe(framefd, recv_frame);
-            processFrame(recv_frame, framefd);
-            free(recv_frame->data);
-            free(recv_frame);
-        }
-        if(FD_ISSET(localfd, &allset)) {
-            printdebuginfo("2\n");
-            clilen = sizeof(cliaddr);
-            memset(&cliaddr, 0, sizeof(cliaddr));
-            
-            n = recvfrom(localfd, &areq, sizeof(struct areqStruct), 0, (SA*)&cliaddr, &clilen);
-            printdebuginfo(" Cli sun_name:%s\n", cliaddr.sun_path);
-        }
+	FD_ZERO(&allset);
+	FD_SET(localfd, &allset);
+	FD_SET(framefd, &allset);
+
+	n = select(max(localfd, framefd) + 1, &allset, NULL, NULL, NULL);
+	if(n < 0) {
+	    perror("Error during select, exiting.");
+	    goto exit;
+	}
+	if(FD_ISSET(framefd, &allset)) {
+	    printdebuginfo("1\n");
+	    recv_frame = zalloc(sizeof(struct recv_frame));
+	    recieveframe(framefd, recv_frame);
+	    processFrame(recv_frame, framefd);
+	    free(recv_frame->data);
+	    free(recv_frame);
+	}
+	if(FD_ISSET(localfd, &allset)) {
+	    printdebuginfo("2\n");
+	    clilen = sizeof(cliaddr);
+	    memset(&cliaddr, 0, sizeof(cliaddr));
+
+	    n = recvfrom(localfd, &areq, sizeof(struct areqStruct), 0, (SA*)&cliaddr, &clilen);
+	    printdebuginfo(" Cli sun_name:%s\n", cliaddr.sun_path);
+	}
     }
 exit:
     close(localfd);
     close(framefd);
-    free_interface_info();
 }
