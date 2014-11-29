@@ -1,5 +1,6 @@
 #include "lib.h"
 #include <netinet/ip.h>
+#include <netinet/ip_icmp.h>
 
 #define IP_ID (PROTO + 3)
 #define PROTO_IP 110
@@ -7,11 +8,16 @@
 #define MPORT "8888"
 #define MIP "239.192.10.10"
 
+#define IP4_HDRLEN 20
+#define ICMP_HDRLEN  8
+
 static unsigned long myip;
-int msendfd = -1, mrecfd = -1;
+int msendfd = -1, mrecfd = -1, sockfd_pf;
 static socklen_t salen;
 static struct sockaddr *sasend = NULL, *sarecv;
 static  char hostname[5];
+static int eth0ino;
+static unsigned char mymac[IF_HADDR];
 struct tour_hdr
 {
     unsigned short total_vms;
@@ -19,6 +25,111 @@ struct tour_hdr
     char ip[16];
     char port[6];
 };
+
+int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
+	unsigned long destip)
+{
+
+    int datalen = 5, n;
+    int buf_len = IP4_HDRLEN + ICMP_HDRLEN + datalen;
+    void *buffer = zalloc(buf_len);
+    struct ip iphdr;
+    struct icmp icmphdr;
+    char data[5] = "PING";
+    // IPv4 header length (4 bits): Number of 32-bit words in header = 5
+    iphdr.ip_hl = IP4_HDRLEN / sizeof (uint32_t);
+
+    // Internet Protocol version (4 bits): IPv4
+    iphdr.ip_v = 4;
+
+    // Type of service (8 bits)
+    iphdr.ip_tos = 0;
+
+    // Total length of datagram (16 bits): IP header + ICMP header + ICMP data
+    iphdr.ip_len = htons (buf_len);
+
+    // ID sequence number (16 bits): unused, since single datagram
+    iphdr.ip_id = htons (0);
+
+    // Flags, and Fragmentation offset (3, 13 bits): 0 since single datagram
+
+    iphdr.ip_off = htons (0);
+
+    // Time-to-Live (8 bits): default to maximum value
+    iphdr.ip_ttl = 255;
+
+    // Transport layer protocol (8 bits): 1 for ICMP
+    iphdr.ip_p = IPPROTO_ICMP;
+    iphdr.ip_src.s_addr = myip;
+    iphdr.ip_dst.s_addr = destip;
+    iphdr.ip_sum = 0;
+    icmphdr.icmp_type = ICMP_ECHO;
+
+    // Message Code (8 bits): echo request
+    icmphdr.icmp_code = 0;
+
+    // Identifier (16 bits): usually pid of sending process - pick a number
+    icmphdr.icmp_id = htons (1000);
+
+    // Sequence Number (16 bits): starts at 0
+    icmphdr.icmp_seq = htons (0);
+
+    // ICMP header checksum (16 bits): set to 0 when calculating checksum
+    icmphdr.icmp_cksum = 0;
+
+    memcpy(buffer, &iphdr, IP4_HDRLEN);
+    memcpy(buffer + IP4_HDRLEN, &icmphdr, ICMP_HDRLEN);
+    memcpy(buffer + IP4_HDRLEN + ICMP_HDRLEN, data, datalen);
+    n = sendframe(fd, destmac, ino, srcmac, buffer, buf_len, ETH_P_IP);
+    free(buffer);
+    if(n < 0)
+    {
+	perror("Error while pinging");
+    }
+    return n;
+
+}
+
+void getmacinfo()
+{
+    struct hwa_info *hwa, *hwahead;
+    for (hwahead = hwa = Get_hw_addrs(); hwa != NULL; hwa = hwa->hwa_next) {
+	struct sockaddr_in  *sin = (struct sockaddr_in *) (hwa->ip_addr);
+	if(strcmp(hwa->if_name, "lo") == 0)
+	    continue;
+	if(strcmp(hwa->if_name, "eth0") == 0) {
+	    eth0ino = hwa->if_index;
+	    memcpy(mymac, hwa->if_haddr, IF_HADDR);
+	} else {
+	    continue;
+	}
+    }
+
+    free_hwa_info(hwahead);
+}
+
+void prepare_and_send_ping(unsigned long destip)
+{
+    //Check if already pinging
+    struct hwaddr hwaddr;
+    struct sockaddr_in addr;
+    int n;
+    bzero(&hwaddr, sizeof(hwaddr));
+    bzero(&addr, sizeof(addr));
+
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = destip;
+    hwaddr.sll_hatype = 1;
+    hwaddr.sll_halen = 6;
+    hwaddr.sll_ifindex = eth0ino;
+    n = areq((SA *)&addr, sizeof(addr), &hwaddr);
+    if(n < 0)
+    {
+	perror("Error while getting mac");
+	return;
+    }
+    sendping(sockfd_pf, hwaddr.sll_addr, mymac, hwaddr.sll_ifindex, destip);
+}
 
 int send_rt(int fd, void *buffer, int lenght, unsigned long destip)
 {
@@ -59,7 +170,7 @@ void create_join_multicast(char *ip, char* port)
 	return;
 
     msendfd = Udp_client(ip, port, &sasend, &salen);
-    
+
     mrecfd = Socket(sasend->sa_family, SOCK_DGRAM, 0);
     setsockopt(mrecfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
     sarecv = zalloc(salen);
@@ -69,7 +180,7 @@ void create_join_multicast(char *ip, char* port)
     Mcast_set_loop(msendfd, 1);
     on = 1;
     setsockopt(msendfd, IPPROTO_IP, IP_MULTICAST_TTL, (void *) &on, 
-              sizeof(on));
+	    sizeof(on));
 }
 
 int recieve_rt(int fd)
@@ -101,6 +212,7 @@ int recieve_rt(int fd)
     cindex = tourhdr->current_index;
     ips = (buffer + sizeof(struct  iphdr) + sizeof(struct tour_hdr));
     printdebuginfo("current index:%d, %d, %d\n", cindex, tvms, sizeof(struct iphdr));
+    prepare_and_send_ping(ips[cindex - 1]);
     //Ping prev node
     if(cindex != tvms - 1)
     {
@@ -130,7 +242,7 @@ int main(int argc, char *argv[])
     int flag1=1, flag2=1, flag3=1;
     unsigned long *vm_list = NULL;
     struct hostent *ent;
-    int i=0, sockfd_rt, sockfd_pg, sockfd_pf, maxsockfd;
+    int i=0, sockfd_rt, sockfd_pg, maxsockfd;
     unsigned long myip;
     struct in_addr ** addr_list;
     fd_set allset;
@@ -214,8 +326,17 @@ int main(int argc, char *argv[])
 	    recieve_rt(sockfd_rt);
 	}
 	if(FD_ISSET(sockfd_pf, &allset)) {
+	    printf("Recieved pf msg\n");
 	}
 	if(FD_ISSET(sockfd_pg, &allset)) {
+	    char msg[100];
+	    int n = read(sockfd_pg, msg, 100);
+	    if ( n < 0)
+	    {
+		perror("Error reading ping response");
+	    }
+	    else
+		printf("Ping response: %s\n", msg);
 	}
 	if(msendfd!=-1 && FD_ISSET(mrecfd, &allset)) {
 	    char msg[100];

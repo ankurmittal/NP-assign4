@@ -17,20 +17,19 @@ get_hw_addrs.o: get_hw_addrs.c
 prhwaddrs.o: prhwaddrs.c
 	${CC} ${FLAGS} -c prhwaddrs.c
 
-tour.o : tour.c lib.h
+tour.o : tour.c lib.h 
 	${CC} ${FLAGS} -DPROTO=${ID} -c tour.c
 
 arp.o : arp.c lib.h
 	${CC} ${FLAGS} -DPROTO=${ID} -c arp.c
 
-${LOGIN}_tour : tour.o lib.o
-	${CC} -g -o $@ tour.o lib.o ${LIBS}
+${LOGIN}_tour : tour.o lib.o get_hw_addrs.o
+	${CC} -g -o $@ tour.o lib.o get_hw_addrs.o ${LIBS}
 
 ${LOGIN}_arp : arp.o lib.o get_hw_addrs.o
 	${CC} -g -o $@ arp.o lib.o get_hw_addrs.o ${LIBS}
 
-
-lib.o : lib.c lib.h
+o : lib.c lib.h
 	${CC} ${FLAGS} -DPROTO=${ID} -c lib.c
 
 clean:
