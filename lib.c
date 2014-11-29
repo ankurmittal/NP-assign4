@@ -12,7 +12,7 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) 
     int n = 0;
     fd_set allset;
     
-    unsigned char *buffer = zalloc(10);
+    unsigned char *buffer = zalloc(20);
     bzero(buffer, 6);
 
     sockfd = Socket(AF_LOCAL, SOCK_STREAM, 0);
@@ -31,7 +31,8 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) 
     n = sendto(sockfd, &reqMsg, sizeof(struct areqStruct), 0, (SA *) &arpaddr, sizeof(arpaddr));
     
     if(n < 0) {
-        perror("Error writing to odr socket\n");
+        perror("Error writing to arp socket\n");
+	goto exit;
     }
 
     selectTime.tv_sec = 3;
@@ -43,19 +44,22 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) 
     select(sockfd+1, &allset, NULL, NULL, &selectTime);
     
     if(FD_ISSET(sockfd, &allset)) {
-        n = read(sockfd,buffer,10);
+        n = read(sockfd,buffer,20);
         if (n < 0) {
             perror("ERROR reading from socket");
-            return n;
+            goto exit;
         }
     } else {
         printdebuginfo("Timeout occured in receive message..!!\n");
-        close(sockfd);
-        return -1;
+        n = ETIME;
+        goto exit;
     }
     
     memcpy(HWaddr->sll_addr, buffer, 6);
+    memcpy(&HWaddr->sll_ifindex, buffer + 6, 4);
+exit:
     free(buffer);
+    close(sockfd);
     return n;
 }
 
