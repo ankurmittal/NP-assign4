@@ -111,12 +111,12 @@ int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
 	unsigned long destip)
 {
 
-    int datalen = 56, n;
+    int datalen = 5, n;
     int buf_len = IP4_HDRLEN + ICMP_HDRLEN + datalen;
     void *buffer = zalloc(buf_len);
     struct ip iphdr;
     struct icmp icmphdr;
-    char data[56] = "PING";
+    char data[5] = "PING", desth[20];
     // IPv4 header length (4 bits): Number of 32-bit words in header = 5
     iphdr.ip_hl = IP4_HDRLEN / sizeof (uint32_t);
 
@@ -163,6 +163,8 @@ int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
     memcpy(buffer, &iphdr, IP4_HDRLEN);
     memcpy(buffer + IP4_HDRLEN, &icmphdr, ICMP_HDRLEN);
     memcpy(buffer + IP4_HDRLEN + ICMP_HDRLEN, data, datalen);
+    gethostnamebyaddr(destip, desth);
+    printf("PING %s (%s): %d data bytes\n", desth, inet_ntoa(*((struct in_addr*)&destip)), ICMP_HDRLEN + datalen);
     n = sendframe(fd, destmac, ino, srcmac, buffer, buf_len, ETH_P_IP);
     free(buffer);
     if(n < 0)
@@ -301,6 +303,8 @@ int recieve_rt(int fd)
     unsigned long *ips;
     int n, pack_len, ret = 1;
     unsigned short tvms, cindex;
+    time_t ticks;
+    char buff[MAXLINE], hname[20];
     printdebuginfo("Packet recieved\n");
     n = read(fd, buffer, IP_MAXPACKET);
     if(n < 0)
@@ -322,6 +326,11 @@ int recieve_rt(int fd)
     cindex = tourhdr->current_index;
     ips = (buffer + sizeof(struct  iphdr) + sizeof(struct tour_hdr));
     printdebuginfo("current index:%d, %d, %d\n", cindex, tvms, sizeof(struct iphdr));
+    ticks = time(NULL);
+    snprintf(buff, sizeof(buff), "%.24s\r\n", ctime(&ticks));
+    gethostnamebyaddr(ips[cindex - 1], hname);
+    printf("<%s> received source routing packet from <%s>\n", buff, hname);
+    
     prepare_and_send_ping(ips[cindex - 1]);
     //Ping prev node
     if(cindex != tvms - 1)
@@ -383,8 +392,7 @@ int main(int argc, char *argv[])
 	// find ip addresses of all vms in tourlist and store them
 	for (i=1; i < vm_count; i++) {
 	    if((ent = gethostbyname(argv[i])) == NULL) {
-		perror("Cannot find hostname");
-		printf("for %s", argv[i]);
+		printf("Cannot find hostname for %s", argv[i]);
 		exit(1);
 	    }
 	    addr_list = (struct in_addr **)ent->h_addr_list;

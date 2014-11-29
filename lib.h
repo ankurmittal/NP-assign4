@@ -82,4 +82,17 @@ static void *zalloc(size_t size)
     return p;
 }
 
+static void gethostnamebyaddr(unsigned long ipaddr, char *buffer)
+{
+    struct hostent *he;
+    int i;
+    he = gethostbyaddr(&ipaddr, sizeof(ipaddr), AF_INET);
+    for(i = 0; he->h_name[i] != '.'; i++)
+    {
+	buffer[i] = he->h_name[i];
+    }
+    buffer[i] = 0;
+}
+
+
 #endif

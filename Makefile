@@ -4,7 +4,7 @@ CC = gcc
 
 LIBS =  /home/courses/cse533/Stevens/unpv13e/libunp.a -lpthread
 
-FLAGS = -g  -O2 -I/home/courses/cse533/Stevens/unpv13e/lib
+FLAGS = -DNDEBUGINFO -g  -O2 -I/home/courses/cse533/Stevens/unpv13e/lib
 
 all: ${LOGIN}_tour  ${LOGIN}_arp
 	
