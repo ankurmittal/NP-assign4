@@ -13,7 +13,7 @@ struct Entry
     unsigned char mac[6];
     int interface;
     int sll_hatype;
-    char *sunpath;
+    char sunpath[108];
 };
 
 struct ll_Node
@@ -60,14 +60,20 @@ void ll_update(struct ll_Node *ll_ptr, uint32_t ip, char *mac) {
     int n=0;
     while(ll_pointer != NULL) {
         if(ll_pointer->data->ip == ip) {
-            memcpy(ll_pointer->data->mac, mac, 6);
-            if(ll_pointer->data->sunpath != NULL) {
+            if(ll_pointer->data->sunpath[0] != 0) {
+                void *areqRes = zalloc(6*sizeof(uint8_t) + sizeof(int));
                 struct sockaddr_un destaddr;
+                memcpy(ll_pointer->data->mac, mac, 6);
                 bzero(&destaddr, sizeof(destaddr));
                 destaddr.sun_family = AF_LOCAL;
                 strcpy(destaddr.sun_path, ll_pointer->data->sunpath);
-                ll_pointer->data->sunpath = NULL;
-                n = sendto(localfd, mac, 6, 0, (SA *) &destaddr, sizeof(destaddr));
+                ll_pointer->data->sunpath[0] = 0;
+
+                memcpy(areqRes, mac, 6*sizeof(uint8_t));
+                memcpy(areqRes + 6*sizeof(uint8_t), &eth0ino, sizeof(int));
+
+                n = sendto(localfd, areqRes, 6*sizeof(uint8_t) + sizeof(int), 0, (SA *) &destaddr, sizeof(destaddr));
+                free(areqRes);
                 if(n < 0) {
                     perror("Error writing to tour..!!\n");
                 }
@@ -87,10 +93,10 @@ void getmacinfo()
         if(strcmp(hwa->if_name, "eth0") == 0) {
             cononicalip = sin->sin_addr.s_addr;
             printdebuginfo(" Cononical IP: %lu\n", cononicalip);
-	    eth0ino = hwa->if_index;
-	    memcpy(eth0macaddr, hwa->if_haddr, IF_HADDR);
+            eth0ino = hwa->if_index;
+            memcpy(eth0macaddr, hwa->if_haddr, IF_HADDR);
         } else {
-	    continue;
+            continue;
         }
     }
 
@@ -107,11 +113,11 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
         return;
     }
     if(header->op == 1) {
-	printf("%lu, %lu\n", header->targetIPAddr, cononicalip);
+        //printf("%" PRIu32 ", %" PRIu32 "\n", header->targetIPAddr, cononicalip);
         if(header->targetIPAddr == cononicalip) {
 
             // this is destination node
-	    printdebuginfo("Reached dest\n");
+            printdebuginfo("Reached dest\n");
 
             memcpy(dest_mac, header->senderEthAddr, 6);
             memcpy(header->targetEthAddr, eth0macaddr, IF_HADDR);
@@ -126,20 +132,20 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
             sendframe(framefd, dest_mac, eth0ino, eth0macaddr, recv_frame->data, sizeof(struct arp_header), PROTO);
 
         } else {
-	    if(header->senderIPAddr == cononicalip)
-		return;
+            if(header->senderIPAddr == cononicalip)
+                return;
             // this is intermediate node
             ll_update(cacheHead, header->senderIPAddr, header->senderEthAddr);
             return;
         }
 
     } else if(header->op == 2) {
-	    printdebuginfo("Recieved reply: ");
-	    int n = 6;
-	    while(n-->0)
-		printdebuginfo("%.2x::",*(header->targetEthAddr+ 5 - n) & 0xff);
-	    printdebuginfo("\n");
-            ll_update(cacheHead, header->senderIPAddr, header->targetEthAddr); 
+        printdebuginfo("Recieved reply: ");
+        int n = 6;
+        while(n-->0)
+            printdebuginfo("%.2x::",*(header->targetEthAddr+ 5 - n) & 0xff);
+        printdebuginfo("\n");
+        ll_update(cacheHead, header->senderIPAddr, header->targetEthAddr); 
     }
 }
 
@@ -167,12 +173,12 @@ int main(int argc, char *argv[])
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sun_family = AF_LOCAL;
     strcpy(servaddr.sun_path, ARP_PATH);
-    
+
     printdebuginfo("Binding.. sunpath: %s\n", servaddr.sun_path);
 
     Bind(localfd, (SA *) &servaddr, sizeof(servaddr));
     Listen(localfd, 100);
-    
+
     getmacinfo();
 
     framefd = Socket(AF_PACKET, SOCK_RAW, htons(PROTO));
@@ -181,48 +187,85 @@ int main(int argc, char *argv[])
 
     if(argc > 1)
     {
-	struct arp_header arphdr;
-	bzero(&arphdr, sizeof(arphdr));
-	arphdr.id = PROTO + 2;
-	arphdr.hard_type = htons(1);
-	arphdr.proto_type = htons (PROTO);
-	arphdr.hard_size = 6;
-	arphdr.prot_size = 4;
-	arphdr.op = 1;
-	memset (&arphdr.targetEthAddr, 0, 6 * sizeof (uint8_t));
-	arphdr.targetIPAddr = 496825730;
-	arphdr.senderIPAddr = cononicalip;
-	memcpy(&arphdr.senderEthAddr, eth0macaddr, 6);
-	sendframe(framefd, b_mac, eth0ino,  eth0macaddr, &arphdr, sizeof(struct arp_header), PROTO);
+        struct arp_header arphdr;
+        bzero(&arphdr, sizeof(arphdr));
+        arphdr.id = PROTO + 2;
+        arphdr.hard_type = htons(1);
+        arphdr.proto_type = htons (PROTO);
+        arphdr.hard_size = 6;
+        arphdr.prot_size = 4;
+        arphdr.op = 1;
+        memset (&arphdr.targetEthAddr, 0, 6 * sizeof (uint8_t));
+        arphdr.targetIPAddr = 496825730;
+        arphdr.senderIPAddr = cononicalip;
+        memcpy(&arphdr.senderEthAddr, eth0macaddr, 6);
+        sendframe(framefd, b_mac, eth0ino,  eth0macaddr, &arphdr, sizeof(struct arp_header), PROTO);
     }
 
     while(1)
     {
-	FD_ZERO(&allset);
-	FD_SET(localfd, &allset);
-	FD_SET(framefd, &allset);
+        FD_ZERO(&allset);
+        FD_SET(localfd, &allset);
+        FD_SET(framefd, &allset);
 
-	n = select(max(localfd, framefd) + 1, &allset, NULL, NULL, NULL);
-	if(n < 0) {
-	    perror("Error during select, exiting.");
-	    goto exit;
-	}
-	if(FD_ISSET(framefd, &allset)) {
-	    printdebuginfo("1\n");
-	    recv_frame = zalloc(sizeof(struct recv_frame));
-	    recieveframe(framefd, recv_frame);
-	    processFrame(recv_frame, framefd);
-	    free(recv_frame->data);
-	    free(recv_frame);
-	}
-	if(FD_ISSET(localfd, &allset)) {
-	    printdebuginfo("2\n");
-	    clilen = sizeof(cliaddr);
-	    memset(&cliaddr, 0, sizeof(cliaddr));
+        n = select(max(localfd, framefd) + 1, &allset, NULL, NULL, NULL);
+        if(n < 0) {
+            perror("Error during select, exiting.");
+            goto exit;
+        }
+        if(FD_ISSET(framefd, &allset)) {
+            printdebuginfo("1\n");
+            recv_frame = zalloc(sizeof(struct recv_frame));
+            recieveframe(framefd, recv_frame);
+            processFrame(recv_frame, framefd);
+            free(recv_frame->data);
+            free(recv_frame);
+        }
+        if(FD_ISSET(localfd, &allset)) {
+            struct arp_header arphdr;
+            struct Entry *cacheEntry;
 
-	    n = recvfrom(localfd, &areq, sizeof(struct areqStruct), 0, (SA*)&cliaddr, &clilen);
-	    printdebuginfo(" Cli sun_name:%s\n", cliaddr.sun_path);
-	}
+            clilen = sizeof(cliaddr);
+            memset(&cliaddr, 0, sizeof(cliaddr));
+
+            n = recvfrom(localfd, &areq, sizeof(struct areqStruct), 0, (SA*)&cliaddr, &clilen);
+            printdebuginfo(" Cli sun_name:%s\n", cliaddr.sun_path);
+            
+            cacheEntry = ll_find(cacheHead, areq.targetIP);
+
+            if(cacheEntry != NULL && cacheEntry->mac != NULL) {
+                void *areqRes = zalloc(6*sizeof(uint8_t) + sizeof(int));            
+                memcpy(areqRes, cacheEntry->mac, 6*sizeof(uint8_t));
+                memcpy(areqRes + 6*sizeof(uint8_t), &eth0ino, sizeof(int));
+                n = sendto(localfd, areqRes, (6*sizeof(uint8_t) + sizeof(int)), 0, (SA *)&cliaddr, clilen);
+                free(areqRes);
+                if(n < 0) {
+                    printdebuginfo("Error writing back to tour (localfd)\n");
+                }
+                continue;
+            }
+
+            cacheEntry = zalloc(sizeof(struct Entry));
+            cacheEntry->ip = areq.targetIP;
+            cacheEntry->interface = eth0ino;
+            cacheEntry->sll_hatype = htons(areq.hard_type);
+            memcpy(cacheEntry->sunpath, cliaddr.sun_path, 108);
+
+            cacheHead = ll_insert(cacheHead, cacheEntry);
+
+            bzero(&arphdr, sizeof(arphdr));
+            arphdr.id = PROTO + 2;
+            arphdr.hard_type = htons(areq.hard_type);
+            arphdr.proto_type = htons (PROTO);
+            arphdr.hard_size = areq.addr_len;
+            arphdr.prot_size = 4;
+            arphdr.op = 1;
+            memset (&arphdr.targetEthAddr, 0, 6 * sizeof (uint8_t));
+            arphdr.targetIPAddr = areq.targetIP;
+            arphdr.senderIPAddr = cononicalip;
+            memcpy(&arphdr.senderEthAddr, eth0macaddr, 6);
+            sendframe(framefd, b_mac, eth0ino,  eth0macaddr, &arphdr, sizeof(struct arp_header), PROTO);
+        }
     }
 exit:
     close(localfd);
