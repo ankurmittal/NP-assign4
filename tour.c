@@ -2,7 +2,7 @@
 #include <netinet/ip.h>
 
 #define IP_ID (PROTO + 3)
-#define PROTO_IP (PROTO + 5)
+#define PROTO_IP 110
 
 #define MPORT "8888"
 #define MIP "239.192.10.10"
@@ -35,7 +35,7 @@ int send_rt(int fd, void *buffer, int lenght, unsigned long destip)
     iphdr->version = 4;
     iphdr->tos = 0;
     iphdr->ttl = 255;
-    iphdr->protocol = IPPROTO_RAW;
+    iphdr->protocol = PROTO_IP;
     iphdr->id = htons(IP_ID);
     iphdr->check = 0;
     iphdr->saddr = myip;
@@ -67,6 +67,9 @@ void create_join_multicast(char *ip, char* port)
     Bind(mrecfd, sarecv, salen);
     Mcast_join(mrecfd, sasend, salen, NULL, 0);
     Mcast_set_loop(msendfd, 1);
+    on = 1;
+    setsockopt(msendfd, IPPROTO_IP, IP_MULTICAST_TTL, (void *) &on, 
+              sizeof(on));
 }
 
 int recieve_rt(int fd)
@@ -168,7 +171,7 @@ int main(int argc, char *argv[])
 	}
     }
 
-    sockfd_rt = Socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+    sockfd_rt = Socket(AF_INET, SOCK_RAW, PROTO_IP);
     sockfd_pg = Socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     sockfd_pf = Socket(PF_PACKET, SOCK_RAW, htons(ETH_P_IP));
     maxsockfd = max(max(sockfd_rt, sockfd_pg), sockfd_pf);
