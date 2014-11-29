@@ -18,7 +18,7 @@ prhwaddrs.o: prhwaddrs.c
 	${CC} ${FLAGS} -c prhwaddrs.c
 
 tour.o : tour.c lib.h
-	${CC} ${FLAGS} -c tour.c
+	${CC} ${FLAGS} -DPROTO=${ID} -c tour.c
 
 arp.o : arp.c lib.h
 	${CC} ${FLAGS} -DPROTO=${ID} -c arp.c
