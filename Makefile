@@ -2,7 +2,7 @@ include var.mk
 
 CC = gcc
 
-LIBS =  /home/courses/cse533/Stevens/unpv13e/libunp.a
+LIBS =  /home/courses/cse533/Stevens/unpv13e/libunp.a -lpthread
 
 FLAGS = -g  -O2 -I/home/courses/cse533/Stevens/unpv13e/lib
 

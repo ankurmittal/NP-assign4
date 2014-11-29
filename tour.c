@@ -18,6 +18,10 @@ static struct sockaddr *sasend = NULL, *sarecv;
 static  char hostname[5];
 static int eth0ino;
 static unsigned char mymac[IF_HADDR];
+static unsigned long pingips[10];
+static pthread_t tids[10];
+static int indexp = 0;
+static short tour_over = 0;
 struct tour_hdr
 {
     unsigned short total_vms;
@@ -187,12 +191,36 @@ void getmacinfo()
     free_hwa_info(hwahead);
 }
 
+void ping(void *buffer)
+{
+    struct hwaddr *hwaddr = buffer;
+    unsigned long destip = *(unsigned long *)(buffer + sizeof(struct hwaddr));
+    while(!tour_over)
+    {
+	struct timeval t;
+	t.tv_sec = 1;
+	t.tv_usec = 0;
+	sendping(sockfd_pf, hwaddr->sll_addr, mymac, hwaddr->sll_ifindex, destip);
+	if(tour_over)
+	    break;
+	select(0,NULL,NULL,NULL,&t);
+    }
+    free(buffer);
+}
+
 void prepare_and_send_ping(unsigned long destip)
 {
+
     //Check if already pinging
     struct hwaddr hwaddr;
     struct sockaddr_in addr;
-    int n;
+    void *buffer = zalloc(sizeof(struct hwaddr) + sizeof(destip));
+    int n, i;
+    for(i = 0; i < indexp; i++)
+    {
+	if(pingips[i] == destip)
+	    return;
+    }
     bzero(&hwaddr, sizeof(hwaddr));
     bzero(&addr, sizeof(addr));
 
@@ -207,7 +235,10 @@ void prepare_and_send_ping(unsigned long destip)
 	perror("Error while getting mac");
 	return;
     }
-    sendping(sockfd_pf, hwaddr.sll_addr, mymac, hwaddr.sll_ifindex, destip);
+    pingips[indexp] = destip;
+    memcpy(buffer, &hwaddr, sizeof(struct hwaddr));
+    memcpy(buffer + sizeof(struct hwaddr), &destip, sizeof(destip));
+    Pthread_create(&tids[indexp++], NULL, &ping, buffer);
 }
 
 int send_rt(int fd, void *buffer, int lenght, unsigned long destip)
@@ -299,6 +330,11 @@ int recieve_rt(int fd)
 	ret = send_rt(fd, tourhdr, n - sizeof(struct  iphdr), ips[cindex + 1]);
     } else {
 	char msg[100];
+	struct timeval t;
+	t.tv_sec = 5;
+	t.tv_usec = 0;
+	select(0, NULL, NULL, NULL, &t);
+	tour_over = 1;
 	int l = sprintf(msg, "This is node %s. Tour has ended. Group members please identify yourselves.", hostname);
 	printf("Node %s. Sending: %s\n", hostname, msg);
 	n = sendto(msendfd, msg, l, 0, sasend, salen);
@@ -428,7 +464,11 @@ int main(int argc, char *argv[])
 		perror("Error recieving multicast msg");
 		goto exit;
 	    }
-	    //Stop pinging
+	    tour_over = 1;
+	    for(i = 0; i < indexp; i++)
+	    {
+		pthread_join(tids[i], NULL);
+	    }
 	    printf("Node %s. Received: %s\n", hostname, msg);
 	    n = sprintf(msg, "Node %s. I am a member of the group.", hostname);
 	    printf("Node %s. Sending: %s\n", hostname, msg);
@@ -450,7 +490,7 @@ int main(int argc, char *argv[])
 		    break;
 	    }
 	    printf("Exiting Tour\n");
-	    //goto exit;
+	    goto exit;
 	}
     }
 
