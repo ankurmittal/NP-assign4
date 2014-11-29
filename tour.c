@@ -11,7 +11,7 @@ static unsigned long myip;
 int msendfd = -1, mrecfd = -1;
 static socklen_t salen;
 static struct sockaddr *sasend = NULL, *sarecv;
-
+static  char hostname[5];
 struct tour_hdr
 {
     unsigned short total_vms;
@@ -55,28 +55,18 @@ int send_rt(int fd, void *buffer, int lenght, unsigned long destip)
 void create_join_multicast(char *ip, char* port)
 {
     int on = 1;
-    //struct sockaddr_in *in = zalloc(sizeof(struct sockaddr_in));
     if(msendfd != -1)
 	return;
 
-    //in->sin_family = AF_INET;
-    //in->sin_port = htons(8888);
-    //inet_pton(AF_INET, ip, &(in->sin_addr));
-    //salen = sizeof(struct sockaddr_in);
-
     msendfd = Udp_client(ip, port, &sasend, &salen);
-    //msendfd = Socket(AF_INET, SOCK_DGRAM,0);
-    //sasend = (SA *)in;
-   //Bind(msendfd, sasend, salen);
+    
     mrecfd = Socket(sasend->sa_family, SOCK_DGRAM, 0);
     setsockopt(mrecfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
     sarecv = zalloc(salen);
     memcpy(sarecv, sasend, salen);
     Bind(mrecfd, sarecv, salen);
     Mcast_join(mrecfd, sasend, salen, NULL, 0);
-    Mcast_set_loop(msendfd, 0);
-    //setsockopt(msendfd, IPPROTO_IP, IP_MULTICAST_LOOP, 0, 1);
-    printdebuginfo("%s, %s, %d, %d, %u, %d\n", ip, port,msendfd, mrecfd, salen, sasend->sa_family);
+    Mcast_set_loop(msendfd, 1);
 }
 
 int recieve_rt(int fd)
@@ -114,11 +104,16 @@ int recieve_rt(int fd)
 	tourhdr->current_index = cindex + 1;
 	ret = send_rt(fd, tourhdr, n - sizeof(struct  iphdr), ips[cindex + 1]);
     } else {
-	printdebuginfo("Tour Ended, %p\n", sasend);
-	printdebuginfo("%d, %d, %u, %lu\n", msendfd, mrecfd, salen, htonl(((struct sockaddr_in *) sasend)->sin_addr.s_addr));
-	n = sendto(msendfd, buffer, 0, 0, sasend, salen);
-	printf("%d\n", errno);
-	perror("sending pac");
+	char msg[100];
+	int l = sprintf(msg, "This is node %s. Tour has ended. Group members please identify yourselves.", hostname);
+	printf("Node %s. Sending: %s\n", hostname, msg);
+	n = sendto(msendfd, msg, l, 0, sasend, salen);
+	if ( n < 0)
+	{
+	    perror("Error sending multicast packet.");
+	    ret = n;
+	    goto exit;
+	}
     }
 
 exit:
@@ -133,7 +128,6 @@ int main(int argc, char *argv[])
     unsigned long *vm_list = NULL;
     struct hostent *ent;
     int i=0, sockfd_rt, sockfd_pg, sockfd_pf, maxsockfd;
-    char hostname[5];
     unsigned long myip;
     struct in_addr ** addr_list;
     fd_set allset;
@@ -221,7 +215,38 @@ int main(int argc, char *argv[])
 	if(FD_ISSET(sockfd_pg, &allset)) {
 	}
 	if(msendfd!=-1 && FD_ISSET(mrecfd, &allset)) {
-	    printdebuginfo("Recieve multicast msg\n");
+	    char msg[100];
+	    struct timeval t;
+	    t.tv_sec = 5;
+	    t.tv_usec = 0;
+	    int n = read(mrecfd, msg, 100);
+	    if(n < 0)
+	    {
+		perror("Error recieving multicast msg");
+		goto exit;
+	    }
+	    //Stop pinging
+	    printf("Node %s. Received: %s\n", hostname, msg);
+	    n = sprintf(msg, "Node %s. I am a member of the group.", hostname);
+	    printf("Node %s. Sending: %s\n", hostname, msg);
+	    n = sendto(msendfd, msg, n, 0, sasend, salen);
+	    if(n < 0)
+	    {
+		perror("Error sending multicast msg");
+		goto exit;
+	    }
+	    while(1)
+	    {
+		FD_ZERO(&allset);
+		FD_SET(mrecfd, &allset);
+		Select(mrecfd + 1, &allset, NULL, NULL, &t);
+		if(FD_ISSET(mrecfd, &allset)) {
+		    n = read(mrecfd, msg, 100);
+		    printf("Node %s. Received: %s\n", hostname, msg);
+		} else 
+		    break;
+	    }
+	    printf("Exiting Tour\n");
 	    goto exit;
 	}
     }
