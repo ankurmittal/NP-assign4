@@ -13,7 +13,7 @@ struct Entry
     unsigned char mac[6];
     int interface;
     int sll_hatype;
-    char sunpath[108];
+    int fd;
 };
 
 struct ll_Node
@@ -55,32 +55,41 @@ struct Entry* ll_find(struct ll_Node *ll_pointer, uint32_t ip) {
     return NULL;
 }
 
-void ll_update(struct ll_Node *ll_ptr, uint32_t ip, char *mac) {
+void sendToTour(int fd, unsigned char *mac, int interface) {
+
+    int n;
+    void *areqRes = zalloc(6*sizeof(uint8_t) + sizeof(int));            
+    memcpy(areqRes, mac, 6*sizeof(uint8_t));
+    memcpy(areqRes + 6*sizeof(uint8_t), &interface, sizeof(int));
+    n = write(localfd, areqRes, (6*sizeof(uint8_t) + sizeof(int)));
+    free(areqRes);
+    if(n < 0) {
+        printdebuginfo("Error writing back to tour\n");
+    }
+}
+
+void ll_update(struct ll_Node *ll_ptr, uint32_t ip, unsigned char *mac, int insertFlag) {
     struct ll_Node *ll_pointer = ll_ptr;
     int n=0;
     while(ll_pointer != NULL) {
         if(ll_pointer->data->ip == ip) {
-            if(ll_pointer->data->sunpath[0] != 0) {
-                void *areqRes = zalloc(6*sizeof(uint8_t) + sizeof(int));
-                struct sockaddr_un destaddr;
-                memcpy(ll_pointer->data->mac, mac, 6);
-                bzero(&destaddr, sizeof(destaddr));
-                destaddr.sun_family = AF_LOCAL;
-                strcpy(destaddr.sun_path, ll_pointer->data->sunpath);
-                ll_pointer->data->sunpath[0] = 0;
-
-                memcpy(areqRes, mac, 6*sizeof(uint8_t));
-                memcpy(areqRes + 6*sizeof(uint8_t), &eth0ino, sizeof(int));
-
-                n = sendto(localfd, areqRes, 6*sizeof(uint8_t) + sizeof(int), 0, (SA *) &destaddr, sizeof(destaddr));
-                free(areqRes);
-                if(n < 0) {
-                    perror("Error writing to tour..!!\n");
-                }
+            memcpy(ll_pointer->data->mac, mac, 6);
+            if(ll_pointer->data->fd != -1) {
+                sendToTour(ll_pointer->data->fd, mac, eth0ino);
+                ll_pointer->data->fd = -1;
             }
             return;
         }
         ll_pointer = ll_pointer->next;
+    }
+    if (insertFlag) {
+        struct Entry *cacheEntry = zalloc(sizeof(struct Entry));
+        cacheEntry->ip = ip;
+        cacheEntry->interface = eth0ino;
+        cacheEntry->sll_hatype = 1;
+        cacheEntry->fd = -1;
+
+        cacheHead = ll_insert(cacheHead, cacheEntry);
     }
 }
 void getmacinfo() 
@@ -127,7 +136,7 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
             header->senderIPAddr = cononicalip;
             header->op = 2;
 
-            ll_update(cacheHead, senderIP, dest_mac);
+            ll_update(cacheHead, senderIP, dest_mac, 1);
 
             sendframe(framefd, dest_mac, eth0ino, eth0macaddr, recv_frame->data, sizeof(struct arp_header), PROTO);
 
@@ -135,7 +144,7 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
             if(header->senderIPAddr == cononicalip)
                 return;
             // this is intermediate node
-            ll_update(cacheHead, header->senderIPAddr, header->senderEthAddr);
+            ll_update(cacheHead, header->senderIPAddr, header->senderEthAddr, 0);
             return;
         }
 
@@ -145,7 +154,7 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
         while(n-->0)
             printdebuginfo("%.2x::",*(header->targetEthAddr+ 5 - n) & 0xff);
         printdebuginfo("\n");
-        ll_update(cacheHead, header->senderIPAddr, header->targetEthAddr); 
+        ll_update(cacheHead, header->senderIPAddr, header->targetEthAddr, 0); 
     }
 }
 
@@ -177,7 +186,7 @@ int main(int argc, char *argv[])
     printdebuginfo("Binding.. sunpath: %s\n", servaddr.sun_path);
 
     Bind(localfd, (SA *) &servaddr, sizeof(servaddr));
-    Listen(localfd, 100);
+    Listen(localfd, LISTENQ);
 
     getmacinfo();
 
@@ -224,24 +233,21 @@ int main(int argc, char *argv[])
         if(FD_ISSET(localfd, &allset)) {
             struct arp_header arphdr;
             struct Entry *cacheEntry;
-	    int connfd;
+            int connfd;
 
             clilen = sizeof(cliaddr);
             memset(&cliaddr, 0, sizeof(cliaddr));
-	    connfd = Accept (localfd, (SA *) &cliaddr, &clilen)
+            connfd = Accept (localfd, (SA *) &cliaddr, &clilen);
 
             n = read(connfd, &areq, sizeof(struct areqStruct));
-            
+
             cacheEntry = ll_find(cacheHead, areq.targetIP);
 
-            if(cacheEntry != NULL && cacheEntry->mac != NULL) {
-                void *areqRes = zalloc(6*sizeof(uint8_t) + sizeof(int));            
-                memcpy(areqRes, cacheEntry->mac, 6*sizeof(uint8_t));
-                memcpy(areqRes + 6*sizeof(uint8_t), &eth0ino, sizeof(int));
-                n = sendto(localfd, areqRes, (6*sizeof(uint8_t) + sizeof(int)), 0, (SA *)&cliaddr, clilen);
-                free(areqRes);
-                if(n < 0) {
-                    printdebuginfo("Error writing back to tour (localfd)\n");
+            if(cacheEntry != NULL) {
+                if(cacheEntry->fd == -1) {
+                    sendToTour(connfd, cacheEntry->mac, eth0ino);
+                } else {
+                    cacheEntry->fd = connfd;
                 }
                 continue;
             }
@@ -250,7 +256,7 @@ int main(int argc, char *argv[])
             cacheEntry->ip = areq.targetIP;
             cacheEntry->interface = eth0ino;
             cacheEntry->sll_hatype = htons(areq.hard_type);
-	    cacheEntry->fd = connfd;
+            cacheEntry->fd = connfd;
 
             cacheHead = ll_insert(cacheHead, cacheEntry);
 
