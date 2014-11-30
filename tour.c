@@ -21,7 +21,7 @@ static unsigned char mymac[IF_HADDR];
 static unsigned long pingips[10];
 static pthread_t tids[10];
 static int indexp = 0;
-static short tour_over = 0;
+static short tour_over = 0, final_node = 0;
 struct tour_hdr
 {
     unsigned short total_vms;
@@ -108,15 +108,15 @@ icmp4_checksum (struct icmp icmphdr, uint8_t *payload, int payloadlen)
 
 
 int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
-	unsigned long destip)
+	unsigned long destip, int seq)
 {
 
-    int datalen = 5, n;
+    int datalen = 12, n;
     int buf_len = IP4_HDRLEN + ICMP_HDRLEN + datalen;
     void *buffer = zalloc(buf_len);
     struct ip iphdr;
     struct icmp icmphdr;
-    char data[5] = "PING", desth[20];
+    char data[13] = "Echo test ", desth[20];
     // IPv4 header length (4 bits): Number of 32-bit words in header = 5
     iphdr.ip_hl = IP4_HDRLEN / sizeof (uint32_t);
 
@@ -137,7 +137,7 @@ int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
     iphdr.ip_off = htons (0);
 
     // Time-to-Live (8 bits): default to maximum value
-    iphdr.ip_ttl = 255;
+    iphdr.ip_ttl = 64;
 
     // Transport layer protocol (8 bits): 1 for ICMP
     iphdr.ip_p = IPPROTO_ICMP;
@@ -145,7 +145,7 @@ int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
 
     printdebuginfo("My ip: %lu\n", myip);
     iphdr.ip_dst.s_addr = destip;
-    iphdr.ip_sum = 0;
+    iphdr.ip_sum = checksum ((uint16_t *) &iphdr, IP4_HDRLEN);
     icmphdr.icmp_type = ICMP_ECHO;
 
     // Message Code (8 bits): echo request
@@ -155,7 +155,7 @@ int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
     icmphdr.icmp_id = htons (getpid());
 
     // Sequence Number (16 bits): starts at 0
-    icmphdr.icmp_seq = htons (1);
+    icmphdr.icmp_seq = htons (seq);
 
     // ICMP header checksum (16 bits): set to 0 when calculating checksum
     icmphdr.icmp_cksum = icmp4_checksum (icmphdr, data, datalen);
@@ -197,12 +197,13 @@ void ping(void *buffer)
 {
     struct hwaddr *hwaddr = buffer;
     unsigned long destip = *(unsigned long *)(buffer + sizeof(struct hwaddr));
+    int seq = 1;
     while(!tour_over)
     {
 	struct timeval t;
 	t.tv_sec = 1;
 	t.tv_usec = 0;
-	sendping(sockfd_pf, hwaddr->sll_addr, mymac, hwaddr->sll_ifindex, destip);
+	sendping(sockfd_pf, hwaddr->sll_addr, mymac, hwaddr->sll_ifindex, destip, seq++);
 	if(tour_over)
 	    break;
 	select(0,NULL,NULL,NULL,&t);
@@ -338,21 +339,7 @@ int recieve_rt(int fd)
 	tourhdr->current_index = cindex + 1;
 	ret = send_rt(fd, tourhdr, n - sizeof(struct  iphdr), ips[cindex + 1]);
     } else {
-	char msg[100];
-	struct timeval t;
-	t.tv_sec = 5;
-	t.tv_usec = 0;
-	select(0, NULL, NULL, NULL, &t);
-	tour_over = 1;
-	int l = sprintf(msg, "This is node %s. Tour has ended. Group members please identify yourselves.", hostname);
-	printf("Node %s. Sending: %s\n", hostname, msg);
-	n = sendto(msendfd, msg, l, 0, sasend, salen);
-	if ( n < 0)
-	{
-	    perror("Error sending multicast packet.");
-	    ret = n;
-	    goto exit;
-	}
+	final_node = 1;
     }
 
 exit:
@@ -360,6 +347,15 @@ exit:
     return ret;
 }
 
+void printip(struct ip *ip)
+{
+    printf("%u, %u, %u, %d, %hu, %d, %u, %u, %u\n", ip->ip_hl, ip->ip_v, ip->ip_tos, ip->ip_len, ip->ip_id, ip->ip_off, ip->ip_ttl, ip->ip_p, ip->ip_sum);
+}
+
+void printicmp(struct icmp *icmp)
+{
+    printf("%u, %u, %u, %d\n", icmp->icmp_type, icmp->icmp_code, icmp->icmp_id, icmp->icmp_seq);
+}
 int main(int argc, char *argv[])
 {
     int vm_count=argc;
@@ -369,6 +365,7 @@ int main(int argc, char *argv[])
     int i=0, sockfd_rt, sockfd_pg, maxsockfd;
     struct in_addr ** addr_list;
     fd_set allset;
+    struct timeval t;
     int n;
     getmacinfo();
 
@@ -413,6 +410,8 @@ int main(int argc, char *argv[])
 
     setsockopt(sockfd_rt, IPPROTO_IP, IP_HDRINCL, &flag1, sizeof(flag1));
     setsockopt(sockfd_pg, IPPROTO_IP, IP_HDRINCL, &flag2, sizeof(flag2));
+    flag2 = 1;
+    setsockopt(sockfd_pf, IPPROTO_IP, IP_HDRINCL, &flag2, sizeof(flag2));
     setsockopt(sockfd_pf, SOL_SOCKET, SO_REUSEADDR, &flag3, sizeof(flag3));
 
     if(argc > 1)
@@ -440,28 +439,40 @@ int main(int argc, char *argv[])
 	    FD_SET(mrecfd, &allset);
 	    maxsockfd = max(maxsockfd, mrecfd);
 	}
-	n = select(maxsockfd + 1, &allset, NULL, NULL, NULL);
+	n = select(maxsockfd + 1, &allset, NULL, NULL, final_node? &t:NULL);
 	if(FD_ISSET(sockfd_rt, &allset)) {
 	    //Recieve tour packet
 	    //Ping?
 	    //is last? send broadcast
 	    //forward msg
 	    recieve_rt(sockfd_rt);
+	    if(final_node) {
+		t.tv_sec = 5;
+		t.tv_usec = 0;
+	    }
 	}
-	if(FD_ISSET(sockfd_pf, &allset)) {
-	    printf("Recieved pf msg\n");
-	}
-	if(FD_ISSET(sockfd_pg, &allset)) {
-	    char msg[100];
-	    int n = read(sockfd_pg, msg, 100);
+	else if(FD_ISSET(sockfd_pg, &allset)) {
+	    void *pingres = zalloc(100);
+	    struct ip *iphdr = pingres;
+	    struct icmp *icmphdr = pingres + 20;
+	    int n = read(sockfd_pg, pingres, 100);
 	    if ( n < 0)
 	    {
 		perror("Error reading ping response");
 	    }
-	    else
-		printf("Ping response: %s\n", msg);
+	    else {
+		if(icmphdr->icmp_type == 0 && icmphdr->icmp_id == htons(getpid()))
+		{
+		    //printip(iphdr);
+		    //printicmp(icmphdr);
+		    char hname[20];
+		    gethostnamebyaddr(iphdr->ip_src.s_addr, hname);
+		    printf ("%d bytes from %s (%s): type = %d, code = %d\n",n - 20, hname, inet_ntoa(iphdr->ip_src),
+			icmphdr->icmp_type, icmphdr->icmp_code);
+		}
+	    }
 	}
-	if(msendfd!=-1 && FD_ISSET(mrecfd, &allset)) {
+	else if(msendfd!=-1 && FD_ISSET(mrecfd, &allset)) {
 	    char msg[100];
 	    struct timeval t;
 	    t.tv_sec = 5;
@@ -499,6 +510,17 @@ int main(int argc, char *argv[])
 	    }
 	    printf("Exiting Tour\n");
 	    goto exit;
+	} else if(final_node) {
+	    char msg[100];
+	    int l = sprintf(msg, "This is node %s. Tour has ended. Group members please identify yourselves.", hostname);
+	    printf("Node %s. Sending: %s\n", hostname, msg);
+	    n = sendto(msendfd, msg, l, 0, sasend, salen);
+	    if ( n < 0)
+	    {
+		perror("Error sending multicast packet.");
+		goto exit;
+	    }
+	    final_node = 0;
 	}
     }
 

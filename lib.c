@@ -23,7 +23,12 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) 
     tfd = mkstemp(cliaddr.sun_path);
     unlink(cliaddr.sun_path);
     //Bind(sockfd, (SA *) &cliaddr, sizeof(arpaddr));
-    Connect (sockfd, (SA*)&arpaddr, sizeof (arpaddr));
+    n = connect (sockfd, (SA*)&arpaddr, sizeof (arpaddr));
+    if(n < 0)
+    {
+	perror("Cannot connect to arp");
+	goto exit;
+    }
 
     reqMsg.targetIP = sin->sin_addr.s_addr;
     reqMsg.interface = HWaddr->sll_ifindex;
