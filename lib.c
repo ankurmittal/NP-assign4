@@ -17,7 +17,7 @@ void print_eth_hdr(struct ethhdr *eh) {
         printf(" %.2x%s", *(eh->h_source - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
     } while (--length > 0);
     
-    printf("\n");
+    printf("\n\n");
 }
 
 void print_arp_hdr(struct arp_header *ah) {
@@ -48,7 +48,7 @@ void print_arp_hdr(struct arp_header *ah) {
         printf(" %.2x%s", *(ah->targetEthAddr - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
     } while (--length > 0);
     
-    printf("\n");
+    printf("\n\n");
 }
 
 /*

@@ -106,10 +106,16 @@ void getmacinfo()
         if(strcmp(hwa->if_name, "lo") == 0)
             continue;
         if(strcmp(hwa->if_name, "eth0") == 0) {
+            int length = IF_HADDR;
             cononicalip = sin->sin_addr.s_addr;
             printdebuginfo(" Cononical IP: %lu\n", cononicalip);
             eth0ino = hwa->if_index;
             memcpy(eth0macaddr, hwa->if_haddr, IF_HADDR);
+            printf("\n<%s,", inet_ntoa(sin->sin_addr));
+            do {
+                printf(" %.2x%s", *(hwa->if_haddr - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+            } while (--length > 0);
+            printf(">\n");
         } else {
             continue;
         }
