@@ -20,11 +20,11 @@ void print_eth_hdr(struct ethhdr *eh) {
     printf("\n\n");
 }
 
-void print_arp_hdr(struct arp_header *ah) {
+void print_arp_hdr(struct arp_header *ah, char *msg) {
 
     int length = IF_HADDR;
 
-    printf("ARP Request Message Contents:\n");
+    printf("%s\n", msg);
     
     printf(" id: %d, hard_type: %d, proto_type: %d, ", ah->id, ntohs(ah->hard_type), ntohs(ah->proto_type));
     printf("hard_size: %d, prot_size: %d, ", ah->hard_size, ah->prot_size);
@@ -55,14 +55,16 @@ void print_arp_hdr(struct arp_header *ah) {
  * returns number of bytes read when successful, else returns -1
  */
 int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) {
-    int sockfd, tfd;
+    int sockfd, tfd, length;
     struct sockaddr_un arpaddr, cliaddr;   
     struct areqStruct reqMsg;
     struct sockaddr_in *sin = (struct sockaddr_in *) IPaddr;    
     static struct timeval selectTime;
     int n = 0;
     fd_set allset;
-    
+   
+    printf("areq: seeking hardware address for %s\n", inet_ntoa(sin->sin_addr));
+ 
     unsigned char *buffer = zalloc(20);
 
     sockfd = Socket(AF_LOCAL, SOCK_STREAM, 0);
@@ -104,10 +106,11 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) 
     if(FD_ISSET(sockfd, &allset)) {
         n = read(sockfd,buffer,20);
         if (n < 0) {
-            perror("ERROR reading from socket");
+            perror("areq: ERROR reading from socket");
             goto exit;
         }
     } else {
+        printf("areq: timeout occured\n");
         printdebuginfo("Timeout occured in receive message..!!\n");
         n = -ETIME;
 	errno = -ETIME;
@@ -115,6 +118,12 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) 
     }
     
     memcpy(HWaddr->sll_addr, buffer, 6);
+    printf("areq: hardware_address: ");
+    length = IF_HADDR;
+    do {
+        printf(" %.2x%s", *(HWaddr->sll_addr - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+    } while (--length > 0);
+    printf("\n");
     memcpy(&HWaddr->sll_ifindex, buffer + 6, 4);
 exit:
     free(buffer);
@@ -194,7 +203,6 @@ int sendframe(int framefd, char *destmac, int interface, char *srcmac, void *dat
 
     if (print_info) {
         print_eth_hdr(eh);
-        print_arp_hdr((struct arp_header *)data_p);
     }
 
 	n = sendto(framefd, buffer, len, 0, 

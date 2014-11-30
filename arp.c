@@ -139,6 +139,9 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
 
             // this is destination node
             printdebuginfo("Reached dest\n");
+            printf("Received Ethernet Header:\n");
+            print_eth_hdr(&(recv_frame->eh));
+            print_arp_hdr(header, "ARP Request Msg Content:");
 
             memcpy(dest_mac, header->senderEthAddr, 6);
             memcpy(header->targetEthAddr, eth0macaddr, IF_HADDR);
@@ -150,12 +153,10 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
 
             ll_update(cacheHead, senderIP, dest_mac, 1);
 
-            printf("Received Ethernet Header:\n");
-            print_eth_hdr(&(recv_frame->eh));
-            print_arp_hdr(header);
 
-            printf("Sending reply Ethernet Header:\n");
+            printf("Sending reply ethernet header:\n");
             sendframe(framefd, dest_mac, eth0ino, eth0macaddr, recv_frame->data, sizeof(struct arp_header), PROTO, 1);
+            print_arp_hdr(header, "ARP Response Msg Content:");
 
         } else {
             if(header->senderIPAddr == cononicalip)
@@ -274,6 +275,7 @@ int main(int argc, char *argv[])
             
             printf("Creating Request, Ethernet Header:\n");
             sendframe(framefd, b_mac, eth0ino,  eth0macaddr, &arphdr, sizeof(struct arp_header), PROTO, 1);
+            print_arp_hdr(&arphdr, "ARP Request Msg Content:");
         }
     }
 exit:
