@@ -111,12 +111,12 @@ int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
 	unsigned long destip, int seq)
 {
 
-    int datalen = 12, n;
+    int datalen = 11, n;
     int buf_len = IP4_HDRLEN + ICMP_HDRLEN + datalen;
     void *buffer = zalloc(buf_len);
     struct ip iphdr;
     struct icmp icmphdr;
-    char data[13] = "Echo test ", desth[20];
+    char data[11] = "Echo test ", desth[20];
     // IPv4 header length (4 bits): Number of 32-bit words in header = 5
     iphdr.ip_hl = IP4_HDRLEN / sizeof (uint32_t);
 
