@@ -20,6 +20,37 @@ void print_eth_hdr(struct ethhdr *eh) {
     printf("\n");
 }
 
+void print_arp_hdr(struct arp_header *ah) {
+
+    int length = IF_HADDR;
+
+    printf("ARP Request Message Contents:\n");
+    
+    printf(" id: %d, hard_type: %d, proto_type: %d, ", ah->id, ntohs(ah->hard_type), ntohs(ah->proto_type));
+    printf("hard_size: %d, prot_size: %d, ", ah->hard_size, ah->prot_size);
+    
+    if(ah->op)
+        printf("type: Request, ");
+    else
+        printf("type: Response, ");
+
+    printf("Sender IP: %s, ", inet_ntoa(*((struct in_addr *)&(ah->senderIPAddr))));
+    printf("Target IP: %s, ", inet_ntoa(*((struct in_addr *)&(ah->targetIPAddr))));
+
+    printf("sender_mac: ");
+    do {
+        printf(" %.2x%s", *(ah->senderEthAddr - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+    } while (--length > 0);
+    
+    printf(", target_mac: ");
+    length = IF_HADDR;
+    do {
+        printf(" %.2x%s", *(ah->targetEthAddr - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+    } while (--length > 0);
+    
+    printf("\n");
+}
+
 /*
  * returns number of bytes read when successful, else returns -1
  */
@@ -156,8 +187,10 @@ int sendframe(int framefd, char *destmac, int interface, char *srcmac, void *dat
 	    printdebuginfo("%.2x::", *(srcmac + 5 - n) & 0xff);
 	printdebuginfo("\n");
 
-    if (print_info)
+    if (print_info) {
         print_eth_hdr(eh);
+        print_arp_hdr((struct arp_header *)data_p);
+    }
 
 	n = sendto(framefd, buffer, len, 0, 
 			(struct sockaddr*)&socket_address, sizeof(socket_address));

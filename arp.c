@@ -146,6 +146,7 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
 
             printf("Received Ethernet Header:\n");
             print_eth_hdr(&(recv_frame->eh));
+            print_arp_hdr(header);
 
             printf("Sending reply Ethernet Header:\n");
             sendframe(framefd, dest_mac, eth0ino, eth0macaddr, recv_frame->data, sizeof(struct arp_header), PROTO, 1);
