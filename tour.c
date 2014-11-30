@@ -516,7 +516,7 @@ int main(int argc, char *argv[])
 	    char msg[200];
 	    int l = sprintf(msg, "This is node %s. Tour has ended. Group members please identify yourselves.", hostname);
 	    printf("Node %s. Sending: %s\n", hostname, msg);
-	    n = sendto(msendfd, msg, l, 0, sasend, salen);
+	    n = sendto(msendfd, msg, l + 1, 0, sasend, salen);
 	    if ( n < 0)
 	    {
 		perror("Error sending multicast packet.");

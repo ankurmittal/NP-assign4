@@ -121,7 +121,7 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr) 
     printf("areq: hardware_address: ");
     length = IF_HADDR;
     do {
-	printf(" %.2x%s", *(HWaddr->sll_addr - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+	printf(" %.2x%s", *(HWaddr->sll_addr + (IF_HADDR - length)) & 0xff, (length == 1) ? " " : ":");
     } while (--length > 0);
     printf("\n");
     memcpy(&HWaddr->sll_ifindex, buffer + 6, 4);
