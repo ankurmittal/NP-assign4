@@ -384,7 +384,7 @@ int main(int argc, char *argv[])
 
     if(argc > 1)
     {
-	vm_list = malloc(vm_count*sizeof(unsigned long));
+	vm_list = zalloc(vm_count*sizeof(unsigned long));
 	vm_list[0] = myip;
 	// find ip addresses of all vms in tourlist and store them
 	for (i=1; i < vm_count; i++) {
@@ -427,6 +427,7 @@ int main(int argc, char *argv[])
 	memcpy(buffer + sizeof(struct tour_hdr), vm_list, len  - sizeof(struct tour_hdr));
 	send_rt(sockfd_rt, buffer, len, vm_list[1]);
 	free(buffer);
+	free(vm_list);
     }
     while(1)
     {
