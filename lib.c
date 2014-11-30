@@ -1,5 +1,25 @@
 #include "lib.h"
 
+void print_eth_hdr(struct ethhdr *eh) {
+	int length = 0;
+
+    printf("proto: %d, ", ntohs(eh->h_proto));
+    
+    printf("destination_mac: ");
+    length = IF_HADDR;
+    do {
+        printf(" %.2x%s", *(eh->h_dest - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+    } while (--length > 0);
+    
+    printf(", source_mac: ");    
+    length = IF_HADDR;
+    do {
+        printf(" %.2x%s", *(eh->h_source - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+    } while (--length > 0);
+    
+    printf("\n");
+}
+
 /*
  * returns number of bytes read when successful, else returns -1
  */
@@ -66,7 +86,7 @@ exit:
     return n;
 }
 
-int sendframe(int framefd, char *destmac, int interface, char *srcmac, void *data, int data_length, short proto)
+int sendframe(int framefd, char *destmac, int interface, char *srcmac, void *data, int data_length, short proto, int print_info)
 {    
 	struct sockaddr_ll socket_address;
 	int n;
@@ -135,6 +155,10 @@ int sendframe(int framefd, char *destmac, int interface, char *srcmac, void *dat
 	while(n-- > 0)
 	    printdebuginfo("%.2x::", *(srcmac + 5 - n) & 0xff);
 	printdebuginfo("\n");
+
+    if (print_info)
+        print_eth_hdr(eh);
+
 	n = sendto(framefd, buffer, len, 0, 
 			(struct sockaddr*)&socket_address, sizeof(socket_address));
 	if (n < 0) 
@@ -162,7 +186,10 @@ void recieveframe(int framefd, struct recv_frame *recv_frame)
 	
 	datalength = length - sizeof(struct ethhdr);
 
-	recv_frame->data = zalloc(datalength);	
+	recv_frame->data = zalloc(datalength);
+
+    memcpy(&(recv_frame->eh), buffer, sizeof(struct ethhdr));
+
 	memcpy(recv_frame->data, buffer+sizeof(struct ethhdr), datalength);
 	printdebuginfo("\n message recieved, len:%d, at interface %d with mac address: ", length, socket_address.sll_ifindex);
 

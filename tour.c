@@ -165,7 +165,7 @@ int sendping(int fd, unsigned char *destmac, unsigned char *srcmac, int ino,
     memcpy(buffer + IP4_HDRLEN + ICMP_HDRLEN, data, datalen);
     gethostnamebyaddr(destip, desth);
     printf("PING %s (%s): %d data bytes\n", desth, inet_ntoa(*((struct in_addr*)&destip)), ICMP_HDRLEN + datalen);
-    n = sendframe(fd, destmac, ino, srcmac, buffer, buf_len, ETH_P_IP);
+    n = sendframe(fd, destmac, ino, srcmac, buffer, buf_len, ETH_P_IP, 0);
     free(buffer);
     if(n < 0)
     {
