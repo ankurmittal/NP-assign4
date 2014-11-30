@@ -69,8 +69,9 @@ struct recv_frame {
     int interfaceNo;
     unsigned char src_mac[6];
     void *data;
+    struct ethhdr eh;
 };
-int sendframe(int framefd, char *destmac, int interface, char *srcmac, void *data, int data_length, short proto);
+int sendframe(int framefd, char *destmac, int interface, char *srcmac, void *data, int data_length, short proto, int print_info);
 int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr);
 void recieveframe(int framefd, struct recv_frame *recv_frame);
 

@@ -65,12 +65,13 @@ void sendToTour(int fd, unsigned char *mac, int interface) {
     printdebuginfo("sending to tour\n");
 
     n = write(fd, areqRes, (6*sizeof(uint8_t) + sizeof(int)));
-    
-    
-    free(areqRes);
     if(n < 0) {
+
         printdebuginfo("Error writing back to tour\n");
     }
+    
+    free(areqRes);
+    close(fd);
 }
 
 void ll_update(struct ll_Node *ll_ptr, uint32_t ip, unsigned char *mac, int insertFlag) {
@@ -143,7 +144,12 @@ void processFrame(struct recv_frame *recv_frame, int framefd)
 
             ll_update(cacheHead, senderIP, dest_mac, 1);
 
-            sendframe(framefd, dest_mac, eth0ino, eth0macaddr, recv_frame->data, sizeof(struct arp_header), PROTO);
+            printf("Received Ethernet Header:\n");
+            print_eth_hdr(&(recv_frame->eh));
+            print_arp_hdr(header);
+
+            printf("Sending reply Ethernet Header:\n");
+            sendframe(framefd, dest_mac, eth0ino, eth0macaddr, recv_frame->data, sizeof(struct arp_header), PROTO, 1);
 
         } else {
             if(header->senderIPAddr == cononicalip)
@@ -198,23 +204,6 @@ int main(int argc, char *argv[])
     framefd = Socket(AF_PACKET, SOCK_RAW, htons(PROTO));
 
     printdebuginfo("before loop:\n localfd: %d, framefd: %d\n", localfd, framefd);
-
-    if(argc > 1)
-    {
-        struct arp_header arphdr;
-        bzero(&arphdr, sizeof(arphdr));
-        arphdr.id = PROTO + 2;
-        arphdr.hard_type = htons(1);
-        arphdr.proto_type = htons (PROTO);
-        arphdr.hard_size = 6;
-        arphdr.prot_size = 4;
-        arphdr.op = 1;
-        memset (&arphdr.targetEthAddr, 0, 6 * sizeof (uint8_t));
-        arphdr.targetIPAddr = 496825730;
-        arphdr.senderIPAddr = cononicalip;
-        memcpy(&arphdr.senderEthAddr, eth0macaddr, 6);
-        sendframe(framefd, b_mac, eth0ino,  eth0macaddr, &arphdr, sizeof(struct arp_header), PROTO);
-    }
 
     while(1)
     {
@@ -276,7 +265,9 @@ int main(int argc, char *argv[])
             arphdr.targetIPAddr = areq.targetIP;
             arphdr.senderIPAddr = cononicalip;
             memcpy(&arphdr.senderEthAddr, eth0macaddr, 6);
-            sendframe(framefd, b_mac, eth0ino,  eth0macaddr, &arphdr, sizeof(struct arp_header), PROTO);
+            
+            printf("Creating Request, Ethernet Header:\n");
+            sendframe(framefd, b_mac, eth0ino,  eth0macaddr, &arphdr, sizeof(struct arp_header), PROTO, 1);
         }
     }
 exit:
