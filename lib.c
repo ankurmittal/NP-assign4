@@ -8,13 +8,13 @@ void print_eth_hdr(struct ethhdr *eh) {
     printf("destination_mac: ");
     length = IF_HADDR;
     do {
-	printf(" %.2x%s", *(eh->h_dest - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+	printf(" %.2x%s", *(eh->h_dest + (IF_HADDR - length)) & 0xff, (length == 1) ? " " : ":");
     } while (--length > 0);
 
     printf(", source_mac: ");    
     length = IF_HADDR;
     do {
-	printf(" %.2x%s", *(eh->h_source - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+	printf(" %.2x%s", *(eh->h_source + (IF_HADDR - length)) & 0xff, (length == 1) ? " " : ":");
     } while (--length > 0);
 
     printf("\n\n");
@@ -39,13 +39,13 @@ void print_arp_hdr(struct arp_header *ah, char *msg) {
 
     printf("sender_mac: ");
     do {
-	printf(" %.2x%s", *(ah->senderEthAddr - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+	printf(" %.2x%s", *(ah->senderEthAddr + (IF_HADDR - length)) & 0xff, (length == 1) ? " " : ":");
     } while (--length > 0);
 
     printf(", target_mac: ");
     length = IF_HADDR;
     do {
-	printf(" %.2x%s", *(ah->targetEthAddr - length + IF_HADDR) & 0xff, (length == 1) ? " " : ":");
+	printf(" %.2x%s", *(ah->targetEthAddr + (IF_HADDR - length)) & 0xff, (length == 1) ? " " : ":");
     } while (--length > 0);
 
     printf("\n\n");
@@ -246,7 +246,7 @@ void recieveframe(int framefd, struct recv_frame *recv_frame)
     recv_frame->interfaceNo = socket_address.sll_ifindex;
 
     do {
-	printdebuginfo(" %.2x%s", *(recv_frame->src_mac - length + IF_HADDR), (length == 1) ? " " : ":");
+	printdebuginfo(" %.2x%s", *(recv_frame->src_mac + (IF_HADDR - length)), (length == 1) ? " " : ":");
     } while (--length > 0);
     printdebuginfo("\n");
 
