@@ -471,9 +471,10 @@ int main(int argc, char *argv[])
 			icmphdr->icmp_type, icmphdr->icmp_code);
 		}
 	    }
+	    free(pingres);
 	}
 	else if(msendfd!=-1 && FD_ISSET(mrecfd, &allset)) {
-	    char msg[100];
+	    char msg[200];
 	    struct timeval t;
 	    t.tv_sec = 5;
 	    t.tv_usec = 0;
@@ -511,7 +512,7 @@ int main(int argc, char *argv[])
 	    printf("Exiting Tour\n");
 	    goto exit;
 	} else if(final_node) {
-	    char msg[100];
+	    char msg[200];
 	    int l = sprintf(msg, "This is node %s. Tour has ended. Group members please identify yourselves.", hostname);
 	    printf("Node %s. Sending: %s\n", hostname, msg);
 	    n = sendto(msendfd, msg, l, 0, sasend, salen);
